@@ -763,8 +763,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             clearTimeout(this._stream_timeout);
             this._stream_timeout = null;
         }
-        // Apply data-result class if the message contains a table
         if (this.$current_message) {
+            // Stop thinking dots animation
+            this.$current_message.find(".ai-thinking-block").addClass("ai-thinking-done");
+            // Apply data-result class if the message contains a table
             if (this.$current_message.find("table").length) {
                 this.$current_message.addClass("ai-msg-data");
             }

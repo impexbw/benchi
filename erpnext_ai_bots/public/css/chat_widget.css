@@ -545,9 +545,8 @@
 
 /* ── Thinking block — accumulated steps shown above response ──────────── */
 .ai-thinking-block {
-    border-bottom: 1px solid rgba(108, 92, 231, 0.25);
-    padding-bottom: 8px;
-    margin-bottom: 8px;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .ai-thinking-step {
@@ -557,10 +556,10 @@
     color: #a78bfa;
     font-size: 13px;
     font-style: italic;
-    padding: 4px 0;
-    opacity: 1;
+    padding: 3px 0;
 }
 
+/* Dots pulse only while thinking — stop once response arrives */
 .ai-thinking-dot {
     display: inline-block;
     width: 8px;
@@ -568,6 +567,13 @@
     background: #a78bfa;
     border-radius: 50%;
     animation: ai-pulse 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+/* When response text has arrived, stop the pulsing */
+.ai-thinking-done .ai-thinking-dot {
+    animation: none;
+    opacity: 0.5;
     flex-shrink: 0;
 }
 
