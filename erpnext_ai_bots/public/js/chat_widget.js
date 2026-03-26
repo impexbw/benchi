@@ -112,12 +112,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$messages.scrollTop(this.$messages[0].scrollHeight);
     }
 
-    async send() {
-        const message = this.$input.val().trim();
+    async send(retry_message) {
+        const message = retry_message || this.$input.val().trim();
         if (!message || this.is_streaming) return;
 
-        this.$input.val("").trigger("input");
-        this.add_message("user", message);
+        if (!retry_message) {
+            this.$input.val("").trigger("input");
+            this.add_message("user", message);
+        }
         this.is_streaming = true;
         this.$panel.find(".ai-chat-send").prop("disabled", true);
 
@@ -131,6 +133,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 args: { message: message, session_id: this.session_id },
                 async: true,
             });
+
+            // Handle missing OpenAI token
+            if (result.message.status === "no_token") {
+                this._finish_streaming();
+                this.$current_message.remove();
+                this._show_connect_flow(message);
+                return;
+            }
 
             this.session_id = result.message.session_id;
 
@@ -156,6 +166,111 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 '<span class="text-danger">Something went wrong. Please try again.</span>'
             );
         }
+    }
+
+    _show_connect_flow(pending_message) {
+        // Remove any existing connect flow
+        this.$messages.find(".ai-connect-flow").remove();
+
+        const $flow = $(`
+            <div class="ai-connect-flow">
+                <div class="ai-connect-prompt">
+                    <p><strong>Connect your ChatGPT account</strong></p>
+                    <p class="text-muted">To use the AI Assistant, you need to connect your ChatGPT Plus, Pro, or Max account.</p>
+                    <button class="btn btn-sm btn-primary ai-connect-start-btn">Connect ChatGPT Account</button>
+                </div>
+                <div class="ai-connect-paste" style="display:none;">
+                    <p class="text-muted" style="font-size:12px;">
+                        After signing in, you will be redirected to a page that <strong>won't load</strong>.
+                        Copy the <strong>full URL</strong> from your browser's address bar and paste it below.
+                    </p>
+                    <input type="text" class="form-control ai-connect-url-input"
+                           placeholder="Paste the callback URL here..." />
+                    <div style="margin-top:8px; display:flex; gap:8px;">
+                        <button class="btn btn-sm btn-primary ai-connect-complete-btn">Complete</button>
+                        <button class="btn btn-sm btn-default ai-connect-cancel-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `);
+
+        this.$messages.append($flow);
+        this._scroll_bottom();
+
+        // Start OAuth flow
+        $flow.find(".ai-connect-start-btn").on("click", () => {
+            frappe.call({
+                method: "erpnext_ai_bots.api.openai_oauth.start_oauth",
+                async: true,
+                callback: (r) => {
+                    const data = r.message || {};
+                    if (data.auth_url) {
+                        window.open(data.auth_url, "_blank");
+                        $flow.find(".ai-connect-prompt").hide();
+                        $flow.find(".ai-connect-paste").show();
+                        $flow.find(".ai-connect-url-input").focus();
+                    } else {
+                        frappe.show_alert({ message: __("Failed to start OAuth flow"), indicator: "red" });
+                    }
+                },
+                error: () => {
+                    frappe.show_alert({ message: __("Failed to start OAuth flow"), indicator: "red" });
+                },
+            });
+        });
+
+        // Complete: exchange code
+        $flow.find(".ai-connect-complete-btn").on("click", () => {
+            const pasted = $flow.find(".ai-connect-url-input").val().trim();
+            if (!pasted) {
+                frappe.show_alert({ message: __("Please paste the callback URL"), indicator: "orange" });
+                return;
+            }
+            let code, state;
+            try {
+                const url = new URL(pasted);
+                code = url.searchParams.get("code");
+                state = url.searchParams.get("state");
+            } catch (e) {
+                frappe.show_alert({ message: __("Invalid URL"), indicator: "red" });
+                return;
+            }
+            if (!code) {
+                frappe.show_alert({ message: __("No authorization code found in URL"), indicator: "red" });
+                return;
+            }
+
+            $flow.find(".ai-connect-complete-btn").prop("disabled", true).text("Connecting...");
+
+            frappe.call({
+                method: "erpnext_ai_bots.api.openai_oauth.exchange_code",
+                args: { code: code, state: state || "" },
+                async: true,
+                callback: (r) => {
+                    const data = r.message || {};
+                    if (data.success) {
+                        frappe.show_alert({ message: __("ChatGPT account connected!"), indicator: "green" });
+                        $flow.remove();
+                        // Retry the original message
+                        if (pending_message) {
+                            this.send(pending_message);
+                        }
+                    } else {
+                        frappe.show_alert({ message: __("Connection failed. Please try again."), indicator: "red" });
+                        $flow.find(".ai-connect-complete-btn").prop("disabled", false).text("Complete");
+                    }
+                },
+                error: () => {
+                    frappe.show_alert({ message: __("Connection failed. Try starting the flow again."), indicator: "red" });
+                    $flow.find(".ai-connect-complete-btn").prop("disabled", false).text("Complete");
+                },
+            });
+        });
+
+        // Cancel
+        $flow.find(".ai-connect-cancel-btn").on("click", () => {
+            $flow.remove();
+        });
     }
 
     _setup_stream() {

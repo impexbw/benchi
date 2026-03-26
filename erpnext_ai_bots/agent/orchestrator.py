@@ -83,62 +83,116 @@ class Orchestrator:
     # ── OpenAI (ChatGPT OAuth) path ──────────────────────────────────
 
     def _openai_loop(self):
-        """Send a message via the ChatGPT Codex API and stream the response
-        back to the frontend through Socket.IO.
+        """Agent loop using the ChatGPT Codex Responses API.
 
-        The Codex API requires:
-          - input as a list of message objects
-          - stream=True, store=False
-          - A codex-supported model slug
+        Mirrors the Anthropic loop:
+          1. Send messages + tool schemas to CodexClient.
+          2. Stream text deltas to the frontend via stream_bridge.
+          3. If the response contains function calls, execute each one with
+             the same permission guard, sanitizer, and audit log used by the
+             Anthropic path.
+          4. Append tool results to the input and loop.
+          5. Repeat until the model stops calling tools or max iterations hit.
         """
         from erpnext_ai_bots.licensing.openai_codex import CodexClient
 
         client = CodexClient(user=self.user)
         system_prompt = get_system_prompt(self.user, self.company)
 
-        # Build the message list for the Codex API
-        api_messages = self._build_openai_messages()
-
-        # Resolve model: only use settings.model_name if it is a valid
-        # codex model slug; otherwise fall back to the default.
-        model = None
+        # Resolve model: only accept codex / gpt-5 slugs from settings.
         configured_model = self.settings.model_name or ""
-        if "codex" in configured_model or configured_model.startswith("gpt-5"):
-            model = configured_model
-        # model=None lets CodexClient use its DEFAULT_CODEX_MODEL
+        model = (
+            configured_model
+            if ("codex" in configured_model or configured_model.startswith("gpt-5"))
+            else None
+        )
+        # model=None lets CodexClient fall back to DEFAULT_CODEX_MODEL.
+
+        tool_schemas = self.tool_registry.get_openai_schemas()
+        max_iterations = self.settings.max_tool_calls_per_turn or 15
+
+        # The Codex Responses API keeps a flat input list across turns.
+        # We seed it from conversation history on the first call, then
+        # append tool-call items and tool-result items each iteration.
+        api_input = self._build_openai_messages()
 
         try:
-            # Stream deltas to the frontend as they arrive
-            result = client.send_streaming(
-                messages=api_messages,
-                model=model,
-                instructions=system_prompt,
-                on_delta=lambda delta: self.stream_bridge._publish("ai_chunk", {
-                    "session_id": self.session_id,
-                    "text": delta,
-                }),
+            for _ in range(max_iterations):
+                result = client.send_streaming(
+                    messages=api_input,
+                    model=model,
+                    instructions=system_prompt,
+                    tools=tool_schemas,
+                    on_delta=lambda delta: self.stream_bridge._publish(
+                        "ai_chunk",
+                        {"session_id": self.session_id, "text": delta},
+                    ),
+                )
+
+                # Track token usage for this turn
+                usage = result.get("usage", {})
+                self.token_tracker.record(
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    model=model or "gpt-5.1-codex-mini",
+                )
+
+                function_calls = result.get("function_calls", [])
+                output_items = result.get("output_items", [])
+                response_text = result.get("text", "")
+
+                # No function calls — final assistant turn
+                if not function_calls:
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": response_text}],
+                        "timestamp": frappe.utils.now_datetime().isoformat(),
+                        "usage": usage,
+                    })
+                    self.stream_bridge.send_done()
+                    return
+
+                # There are function calls — execute them and loop.
+                # Persist a record of this assistant turn (tool-use turn).
+                self.messages.append({
+                    "role": "assistant",
+                    "content": self._serialize_openai_output_items(
+                        output_items, response_text
+                    ),
+                    "timestamp": frappe.utils.now_datetime().isoformat(),
+                    "usage": usage,
+                })
+
+                # Extend the flat api_input with the assistant's output items
+                # (which include the function_call items the model emitted).
+                api_input.extend(
+                    self._openai_output_items_for_input(output_items)
+                )
+
+                # Execute each tool call and collect results
+                tool_result_items = self._process_openai_tool_calls(function_calls)
+
+                # Append tool results to api_input for the next request
+                api_input.extend(tool_result_items)
+
+                # Persist tool results in conversation history
+                self.messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "function_call_output",
+                            "call_id": item["call_id"],
+                            "output": item["output"],
+                        }
+                        for item in tool_result_items
+                    ],
+                    "timestamp": frappe.utils.now_datetime().isoformat(),
+                })
+
+            # Exhausted iterations without a final text response
+            self.stream_bridge.send_error(
+                "Maximum tool call limit reached. Please simplify your request."
             )
-
-            response_text = result.get("text", "")
-
-            # Append assistant message
-            self.messages.append({
-                "role": "assistant",
-                "content": [{"type": "text", "text": response_text}],
-                "timestamp": frappe.utils.now_datetime().isoformat(),
-            })
-
-            # Track tokens
-            usage = result.get("usage", {})
-            input_tokens = usage.get("input_tokens", 0)
-            output_tokens = usage.get("output_tokens", 0)
-            self.token_tracker.record(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                model=model or "gpt-5.1-codex-mini",
-            )
-
-            self.stream_bridge.send_done()
 
         except Exception as e:
             error_msg = str(e)
@@ -150,25 +204,175 @@ class Orchestrator:
             })
 
     def _build_openai_messages(self) -> list:
-        """Build a list of message dicts from conversation history for the
-        Codex Responses API.
+        """Build the initial flat input list for the Codex Responses API
+        from the stored conversation history (last 20 turns).
 
-        Returns a list like:
-          [{"role": "user", "content": "hello"}, ...]
+        Plain text messages become ``{"role": ..., "content": "..."}`` items.
+        Turns that contain function_call_output content (tool results stored
+        from a previous OpenAI loop) are re-emitted verbatim so the model
+        has the full context.
         """
         api_messages = []
-        for msg in self.messages[-20:]:  # Last 20 messages for context
+        for msg in self.messages[-20:]:
             role = msg["role"]
             content = msg.get("content", "")
+
             if isinstance(content, list):
+                # Check if this turn contains function_call_output items
+                # (stored by a previous _openai_loop iteration).
+                tool_outputs = [
+                    b for b in content
+                    if isinstance(b, dict)
+                    and b.get("type") == "function_call_output"
+                ]
+                if tool_outputs:
+                    # Re-emit each tool result as a separate input item.
+                    api_messages.extend(tool_outputs)
+                    continue
+
+                # Otherwise extract plain text parts
                 text_parts = [
                     b.get("text", "") for b in content
                     if isinstance(b, dict) and b.get("type") == "text"
                 ]
-                content = "\n".join(text_parts)
+                content = "\n".join(filter(None, text_parts))
+
             if content:
                 api_messages.append({"role": role, "content": content})
+
         return api_messages
+
+    def _serialize_openai_output_items(
+        self, output_items: list, response_text: str
+    ) -> list:
+        """Convert raw Codex output items into JSON-serialisable content blocks
+        for storage in ``self.messages``.
+
+        Text output is stored as ``{"type": "text", "text": "..."}`` and
+        function-call items are stored verbatim (they are already plain dicts).
+        """
+        blocks = []
+        if response_text:
+            blocks.append({"type": "text", "text": response_text})
+        for item in output_items:
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                blocks.append(item)
+        return blocks
+
+    def _openai_output_items_for_input(self, output_items: list) -> list:
+        """Return the subset of output items that must be appended to the
+        Codex API input array when sending tool results back.
+
+        Only ``function_call`` items need to be echoed; message/text items
+        are already implied by the conversation context.
+        """
+        return [
+            item for item in output_items
+            if isinstance(item, dict) and item.get("type") == "function_call"
+        ]
+
+    def _process_openai_tool_calls(self, function_calls: list) -> list:
+        """Execute OpenAI function calls with permission checks, sanitization,
+        and audit logging — the same guards as the Anthropic path.
+
+        Args:
+            function_calls: List of dicts produced by ``_consume_stream``::
+
+                [{"id": "fc_...", "call_id": "call_...",
+                  "name": "tool_name", "arguments": "{...}"}]
+
+        Returns:
+            List of ``function_call_output`` dicts ready to be appended to
+            the Codex API input array::
+
+                [{"type": "function_call_output",
+                  "call_id": "call_...",
+                  "output": "{\"result\": ...}"}]
+        """
+        result_items = []
+
+        for fc in function_calls:
+            self.turn_tool_calls += 1
+            tool_name = fc["name"]
+            call_id = fc["call_id"]
+            start_time = time.time()
+
+            # Parse arguments — the model returns a JSON string
+            try:
+                tool_input = json.loads(fc.get("arguments", "{}") or "{}")
+            except (json.JSONDecodeError, ValueError):
+                tool_input = {}
+
+            self.stream_bridge.send_tool_start(tool_name, tool_input)
+
+            try:
+                # Permission check (same guard as Anthropic path)
+                self.permission_guard.check(tool_name, tool_input)
+
+                # Input sanitization
+                sanitized_input, blocked_fields = self.sanitizer.sanitize(
+                    tool_name, tool_input
+                )
+
+                # Subagent spawn
+                if tool_name == "meta.spawn_subagent":
+                    result = self._handle_subagent(sanitized_input)
+                else:
+                    tool_fn = self.tool_registry.get_tool(tool_name)
+                    result = tool_fn.execute(**sanitized_input)
+
+                exec_time = int((time.time() - start_time) * 1000)
+
+                self._audit_log(
+                    tool_name=tool_name,
+                    tool_input=sanitized_input,
+                    tool_output=result,
+                    status="Success",
+                    exec_time=exec_time,
+                    blocked_fields=blocked_fields,
+                )
+
+                self.stream_bridge.send_tool_result(tool_name, result)
+
+                result_items.append({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": json.dumps(result, default=str),
+                })
+
+            except frappe.PermissionError as e:
+                exec_time = int((time.time() - start_time) * 1000)
+                self._audit_log(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    tool_output={"error": str(e)},
+                    status="PermissionDenied",
+                    exec_time=exec_time,
+                )
+                result_items.append({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": json.dumps(
+                        {"error": f"Permission denied: {e}"}, default=str
+                    ),
+                })
+
+            except Exception as e:
+                exec_time = int((time.time() - start_time) * 1000)
+                self._audit_log(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    tool_output={"error": str(e)},
+                    status="Error",
+                    exec_time=exec_time,
+                )
+                result_items.append({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": json.dumps({"error": str(e)}, default=str),
+                })
+
+        return result_items
 
     # ── Anthropic path ───────────────────────────────────────────────
 

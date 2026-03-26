@@ -73,11 +73,36 @@ class ToolRegistry:
         return self._cache[namespaced_name]
 
     def get_all_schemas(self) -> list:
-        """Return tool schemas for ALL registered tools."""
+        """Return tool schemas for ALL registered tools (Anthropic format)."""
         schemas = []
         for namespaced_name in TOOL_MAP:
             tool = self.get_tool(namespaced_name)
             schemas.append(tool.schema())
+        return schemas
+
+    def get_openai_schemas(self) -> list:
+        """Return tool schemas for ALL registered tools in OpenAI function-calling format.
+
+        Anthropic format:
+            {"name": "...", "description": "...", "input_schema": {"type": "object", ...}}
+
+        OpenAI format:
+            {"type": "function", "function": {"name": "...", "description": "...",
+                                              "parameters": {"type": "object", ...}}}
+        """
+        schemas = []
+        for namespaced_name in TOOL_MAP:
+            tool = self.get_tool(namespaced_name)
+            anthropic_schema = tool.schema()
+            openai_schema = {
+                "type": "function",
+                "function": {
+                    "name": anthropic_schema["name"],
+                    "description": anthropic_schema["description"],
+                    "parameters": anthropic_schema["input_schema"],
+                },
+            }
+            schemas.append(openai_schema)
         return schemas
 
     def resolve_tool_subset(self, patterns: list) -> list:

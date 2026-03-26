@@ -4,6 +4,14 @@ from frappe import _
 from erpnext_ai_bots.guards.rate_limiter import RateLimiter
 
 
+def _user_has_openai_token(user: str) -> bool:
+    """Check if the user has an active OpenAI OAuth token."""
+    if not frappe.db.exists("AI OpenAI Token", user):
+        return False
+    status = frappe.db.get_value("AI OpenAI Token", user, "status")
+    return status == "Connected"
+
+
 @frappe.whitelist()
 def send_message(message: str, session_id: str = None):
     """Main chat endpoint. Initiates agent processing.
@@ -16,6 +24,15 @@ def send_message(message: str, session_id: str = None):
 
     user = frappe.session.user
     company = frappe.defaults.get_user_default("company", user)
+
+    # Check if provider requires OpenAI token
+    settings = frappe.get_cached_doc("AI Bot Settings")
+    provider = settings.provider or "Anthropic"
+    if provider == "OpenAI (ChatGPT OAuth)" and not _user_has_openai_token(user):
+        return {
+            "status": "no_token",
+            "message": _("Please connect your ChatGPT account to use the AI Assistant."),
+        }
 
     # Rate limiting
     limiter = RateLimiter(user)

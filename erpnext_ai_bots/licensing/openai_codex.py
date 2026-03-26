@@ -130,6 +130,42 @@ class CodexClient:
         data = resp.json()
         return [m["slug"] for m in data.get("models", [])]
 
+    def _post_to_codex(self, payload: dict) -> requests.Response:
+        """POST payload to the Codex API, refreshing the token once on 401.
+
+        Returns the streaming :class:`requests.Response`.  Raises via
+        ``frappe.throw`` on non-200 status codes.
+        """
+        self._ensure_valid_token()
+        headers = self._get_headers()
+
+        resp = requests.post(
+            CODEX_API_URL,
+            headers=headers,
+            json=payload,
+            stream=True,
+            timeout=120,
+        )
+
+        if resp.status_code == 401:
+            # Token may have been revoked — try refresh once
+            self._refresh()
+            headers = self._get_headers()
+            resp = requests.post(
+                CODEX_API_URL,
+                headers=headers,
+                json=payload,
+                stream=True,
+                timeout=120,
+            )
+
+        if resp.status_code != 200:
+            frappe.throw(
+                _("Codex API error ({0}): {1}").format(resp.status_code, resp.text[:500])
+            )
+
+        return resp
+
     def send(self, messages: list, model: str = None,
              instructions: str = None) -> dict:
         """Send messages to the Codex API and return the full response.
@@ -144,16 +180,10 @@ class CodexClient:
             instructions: System instructions for the model.
 
         Returns:
-            Dict with keys: text, usage, raw_events
+            Dict with keys: text, usage, raw_events, function_calls
         """
-        self._ensure_valid_token()
-        headers = self._get_headers()
-
-        if not model:
-            model = DEFAULT_CODEX_MODEL
-
         payload = {
-            "model": model,
+            "model": model or DEFAULT_CODEX_MODEL,
             "input": messages,
             "stream": True,
             "store": False,
@@ -161,104 +191,90 @@ class CodexClient:
         if instructions:
             payload["instructions"] = instructions
 
-        resp = requests.post(
-            CODEX_API_URL,
-            headers=headers,
-            json=payload,
-            stream=True,
-            timeout=120,
-        )
-
-        if resp.status_code == 401:
-            # Token may have been revoked -- try refresh once
-            self._refresh()
-            headers = self._get_headers()
-            resp = requests.post(
-                CODEX_API_URL,
-                headers=headers,
-                json=payload,
-                stream=True,
-                timeout=120,
-            )
-
-        if resp.status_code != 200:
-            frappe.throw(
-                _("Codex API error ({0}): {1}").format(resp.status_code, resp.text[:500])
-            )
-
+        resp = self._post_to_codex(payload)
         return self._consume_stream(resp)
 
     def send_streaming(self, messages: list, model: str = None,
-                       instructions: str = None, on_delta=None):
-        """Send messages and yield text deltas as they arrive.
+                       instructions: str = None, on_delta=None,
+                       tools: list = None):
+        """Send messages and stream text deltas via ``on_delta`` callback.
 
         Args:
-            messages: List of message dicts.
+            messages: List of message dicts (Codex Responses API format).
             model: Codex model slug.
             instructions: System instructions.
-            on_delta: Optional callback called with each text delta string.
+            on_delta: Optional callback invoked with each text delta string.
+            tools: Optional list of OpenAI-format tool schemas to send to
+                   the API, enabling function calling.
 
         Returns:
-            Dict with keys: text, usage, raw_events (after stream completes)
+            Dict with keys:
+              - text (str): Full assembled response text.
+              - usage (dict): Token usage {input_tokens, output_tokens}.
+              - raw_events (list): Sorted list of SSE event type strings seen.
+              - function_calls (list): List of completed function-call dicts::
+
+                    [{"id": "fc_...", "call_id": "call_...",
+                      "name": "tool_name", "arguments": "{...}"}]
+
+              - output_items (list): Raw output item dicts from
+                ``response.output_item.done`` events (needed to reconstruct
+                the input array when sending tool results back).
         """
-        self._ensure_valid_token()
-        headers = self._get_headers()
-
-        if not model:
-            model = DEFAULT_CODEX_MODEL
-
         payload = {
-            "model": model,
+            "model": model or DEFAULT_CODEX_MODEL,
             "input": messages,
             "stream": True,
             "store": False,
         }
         if instructions:
             payload["instructions"] = instructions
+        if tools:
+            payload["tools"] = tools
 
-        resp = requests.post(
-            CODEX_API_URL,
-            headers=headers,
-            json=payload,
-            stream=True,
-            timeout=120,
-        )
-
-        if resp.status_code == 401:
-            self._refresh()
-            headers = self._get_headers()
-            resp = requests.post(
-                CODEX_API_URL,
-                headers=headers,
-                json=payload,
-                stream=True,
-                timeout=120,
-            )
-
-        if resp.status_code != 200:
-            frappe.throw(
-                _("Codex API error ({0}): {1}").format(resp.status_code, resp.text[:500])
-            )
-
+        resp = self._post_to_codex(payload)
         return self._consume_stream(resp, on_delta=on_delta)
 
     def _consume_stream(self, resp, on_delta=None) -> dict:
         """Parse the SSE stream from the Codex API.
 
+        Handles both plain text responses and function-call responses.
+
         Returns:
             Dict with:
-              - text: The full assembled response text
-              - usage: Token usage dict (input_tokens, output_tokens)
-              - raw_events: List of event type strings seen
+              - text (str): Full assembled response text.
+              - usage (dict): Token usage {input_tokens, output_tokens}.
+              - raw_events (list): Sorted list of SSE event type strings seen.
+              - function_calls (list): Completed function-call descriptors::
+
+                    [{"id": "fc_...", "call_id": "call_...",
+                      "name": "tool_name", "arguments": "{...}"}]
+
+              - output_items (list): Raw output item dicts emitted by
+                ``response.output_item.done`` events.
         """
         full_text = ""
         usage = {}
         event_types = set()
 
+        # Tracks in-progress function calls keyed by call_id.
+        # Each entry: {"id": ..., "call_id": ..., "name": ..., "args_buf": ""}
+        _pending_calls: dict = {}
+
+        # Completed function calls (args fully assembled)
+        function_calls: list = []
+
+        # Raw output items (function_call items and message items)
+        output_items: list = []
+
         for line_bytes in resp.iter_lines():
             if not line_bytes:
                 continue
-            line = line_bytes.decode("utf-8") if isinstance(line_bytes, bytes) else line_bytes
+            line = (
+                line_bytes.decode("utf-8")
+                if isinstance(line_bytes, bytes)
+                else line_bytes
+            )
             if not line.startswith("data: "):
                 continue
             data_str = line[6:]
@@ -272,12 +288,58 @@ class CodexClient:
             event_type = chunk.get("type", "")
             event_types.add(event_type)
 
+            # ── Text delta ───────────────────────────────────────────────
             if event_type == "response.output_text.delta":
                 delta = chunk.get("delta", "")
                 full_text += delta
                 if on_delta and delta:
                     on_delta(delta)
 
+            # ── Function call item starts ────────────────────────────────
+            elif event_type == "response.output_item.added":
+                item = chunk.get("item", {})
+                if item.get("type") == "function_call":
+                    call_id = item.get("call_id", "")
+                    _pending_calls[call_id] = {
+                        "id": item.get("id", ""),
+                        "call_id": call_id,
+                        "name": item.get("name", ""),
+                        "args_buf": "",
+                    }
+
+            # ── Function call argument streaming ─────────────────────────
+            elif event_type == "response.function_call_arguments.delta":
+                call_id = chunk.get("call_id", "")
+                delta = chunk.get("delta", "")
+                if call_id in _pending_calls:
+                    _pending_calls[call_id]["args_buf"] += delta
+
+            # ── Function call arguments complete ─────────────────────────
+            elif event_type == "response.function_call_arguments.done":
+                call_id = chunk.get("call_id", "")
+                # The "arguments" field on this event is the canonical final value;
+                # fall back to the accumulated buffer if it is absent.
+                final_args = chunk.get("arguments", "")
+                if call_id in _pending_calls:
+                    if final_args:
+                        _pending_calls[call_id]["args_buf"] = final_args
+
+            # ── Output item fully done ────────────────────────────────────
+            elif event_type == "response.output_item.done":
+                item = chunk.get("item", {})
+                output_items.append(item)
+                if item.get("type") == "function_call":
+                    call_id = item.get("call_id", "")
+                    pending = _pending_calls.pop(call_id, None)
+                    if pending:
+                        function_calls.append({
+                            "id": pending["id"],
+                            "call_id": call_id,
+                            "name": pending["name"],
+                            "arguments": pending["args_buf"],
+                        })
+
+            # ── Response complete ─────────────────────────────────────────
             elif event_type == "response.completed":
                 resp_obj = chunk.get("response", {})
                 usage = resp_obj.get("usage", {})
@@ -286,4 +348,6 @@ class CodexClient:
             "text": full_text,
             "usage": usage,
             "raw_events": sorted(event_types),
+            "function_calls": function_calls,
+            "output_items": output_items,
         }
