@@ -533,10 +533,16 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.is_streaming = true;
         this.$panel.find(".ai-chat-send").prop("disabled", true);
 
-        // Create empty bot bubble to stream into
+        // Create bot bubble with immediate "Thinking..." indicator
         this.$current_message = this.add_message("assistant", "");
         this.current_message_text = "";
         this._thinking_steps = [];
+        // Show thinking animation immediately so user sees activity
+        this.$current_message.html(
+            '<div class="ai-thinking-block">' +
+            '<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> Thinking...</div>' +
+            '</div>'
+        );
 
         try {
             const result = await frappe.call({
