@@ -13,8 +13,12 @@ required_apps = ["frappe", "erpnext"]
 app_include_js = [
     "/assets/erpnext_ai_bots/js/chat_stream.js",
     "/assets/erpnext_ai_bots/js/chat_widget.js",
+    "/assets/erpnext_ai_bots/js/openai_oauth.js",
 ]
-app_include_css = "/assets/erpnext_ai_bots/css/chat_widget.css"
+app_include_css = [
+    "/assets/erpnext_ai_bots/css/chat_widget.css",
+    "/assets/erpnext_ai_bots/css/openai_oauth.css",
+]
 
 # DocType permissions
 has_permission = {

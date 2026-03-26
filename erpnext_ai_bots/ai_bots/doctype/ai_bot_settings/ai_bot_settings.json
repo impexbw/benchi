@@ -60,7 +60,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Provider",
-   "options": "Anthropic\nOpenAI\nCustom"
+   "options": "Anthropic\nOpenAI\nOpenAI (ChatGPT OAuth)\nCustom"
   },
   {
    "description": "Your Anthropic/OpenAI API key (BYOK)",
@@ -89,7 +89,7 @@
   {
    "fieldname": "oauth_section",
    "fieldtype": "Section Break",
-   "label": "OAuth (for IdP auth)"
+   "label": "OAuth / ChatGPT Connection"
   },
   {
    "default": "0",
