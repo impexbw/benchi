@@ -1,7 +1,6 @@
 import frappe
 import json
 import time
-import anthropic
 from erpnext_ai_bots.tools.registry import ToolRegistry
 from erpnext_ai_bots.agent.streaming import StreamBridge
 from erpnext_ai_bots.agent.subagent import SubagentSpawner
@@ -15,6 +14,7 @@ from erpnext_ai_bots.utils.prompt_defense import check_prompt_injection
 class Orchestrator:
     """Single agent that handles all user requests.
     Owns all tools. Streams responses. Spawns subagents only when needed.
+    Supports both Anthropic and OpenAI (ChatGPT OAuth) providers.
     """
 
     def __init__(self, user: str, session_id: str, company: str = None):
@@ -22,9 +22,9 @@ class Orchestrator:
         self.session_id = session_id
         self.company = company or frappe.defaults.get_user_default("company", user)
         self.settings = frappe.get_cached_doc("AI Bot Settings")
+        self.provider = self.settings.provider or "Anthropic"
 
         # Initialize components
-        self.client = self._get_client()
         self.tool_registry = ToolRegistry(user=self.user, company=self.company)
         self.permission_guard = PermissionGuard(user=self.user)
         self.sanitizer = InputSanitizer()
@@ -34,10 +34,6 @@ class Orchestrator:
         # Conversation state
         self.messages = self._load_messages()
         self.turn_tool_calls = 0
-
-    def _get_client(self) -> anthropic.Anthropic:
-        api_key = self.settings.get_password("api_key")
-        return anthropic.Anthropic(api_key=api_key)
 
     def _load_messages(self) -> list:
         session = frappe.get_doc("AI Chat Session", self.session_id)
@@ -75,20 +71,161 @@ class Orchestrator:
             "timestamp": frappe.utils.now_datetime().isoformat(),
         })
 
-        # 3. Agent loop
-        self._agent_loop()
+        # 3. Route to the right provider
+        if self.provider == "OpenAI (ChatGPT OAuth)":
+            self._openai_loop()
+        else:
+            self._anthropic_loop()
 
         # 4. Persist
         self._save_messages()
 
-    def _agent_loop(self):
-        """Core loop: call model, stream response, handle tool calls, repeat."""
+    # ── OpenAI (ChatGPT OAuth) path ──────────────────────────────────
+
+    def _openai_loop(self):
+        """Simple request/response using the ChatGPT Codex API via OAuth token."""
+        from erpnext_ai_bots.licensing.openai_codex import CodexClient
+
+        client = CodexClient(user=self.user)
+        system_prompt = get_system_prompt(self.user, self.company)
+
+        # Build conversation context for the prompt
+        conversation = self._build_openai_context()
+
+        model = self.settings.model_name or "gpt-4.1"
+
+        self.stream_bridge._publish("ai_chunk", {
+            "session_id": self.session_id,
+            "text": "",
+        })
+
+        try:
+            result = client.send(
+                message=conversation,
+                model=model,
+                instructions=system_prompt,
+                stream=False,
+            )
+
+            # Extract the response text
+            response_text = self._extract_openai_response(result)
+
+            # Stream the response to the client
+            self.stream_bridge._publish("ai_chunk", {
+                "session_id": self.session_id,
+                "text": response_text,
+            })
+
+            # Append assistant message
+            self.messages.append({
+                "role": "assistant",
+                "content": [{"type": "text", "text": response_text}],
+                "timestamp": frappe.utils.now_datetime().isoformat(),
+            })
+
+            # Track tokens (estimate from response if not provided)
+            input_tokens = result.get("usage", {}).get("input_tokens", 0)
+            output_tokens = result.get("usage", {}).get("output_tokens", 0)
+            self.token_tracker.record(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model=model,
+            )
+
+            self.stream_bridge.send_done()
+
+        except Exception as e:
+            error_msg = str(e)
+            self.stream_bridge.send_error(error_msg)
+            self.messages.append({
+                "role": "assistant",
+                "content": [{"type": "text", "text": f"Error: {error_msg}"}],
+                "timestamp": frappe.utils.now_datetime().isoformat(),
+            })
+
+    def _build_openai_context(self) -> str:
+        """Build a conversation string from message history for OpenAI."""
+        parts = []
+        for msg in self.messages[-20:]:  # Last 20 messages for context
+            role = msg["role"]
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                text_parts = [
+                    b.get("text", "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                ]
+                content = "\n".join(text_parts)
+            if content:
+                parts.append(f"{role}: {content}")
+        return "\n\n".join(parts)
+
+    def _extract_openai_response(self, result: dict) -> str:
+        """Extract text from various OpenAI response formats."""
+        # Codex API response format
+        if "output" in result:
+            output = result["output"]
+            if isinstance(output, str):
+                return output
+            if isinstance(output, list):
+                texts = []
+                for item in output:
+                    if isinstance(item, dict):
+                        if item.get("type") == "message":
+                            for content in item.get("content", []):
+                                if content.get("type") == "output_text":
+                                    texts.append(content.get("text", ""))
+                        elif item.get("type") == "text":
+                            texts.append(item.get("text", ""))
+                return "\n".join(texts) if texts else json.dumps(result)
+
+        # Standard chat completion format
+        if "choices" in result:
+            choices = result["choices"]
+            if choices:
+                return choices[0].get("message", {}).get("content", "")
+
+        # Streaming chunks
+        if "chunks" in result:
+            texts = []
+            for chunk in result["chunks"]:
+                if "choices" in chunk:
+                    delta = chunk["choices"][0].get("delta", {})
+                    if "content" in delta:
+                        texts.append(delta["content"])
+            return "".join(texts)
+
+        # Fallback
+        if "text" in result:
+            return result["text"]
+
+        return json.dumps(result, indent=2)
+
+    # ── Anthropic path ───────────────────────────────────────────────
+
+    def _anthropic_loop(self):
+        """Core loop using Anthropic API: call model, stream response, handle tool calls."""
+        try:
+            import anthropic
+        except ImportError:
+            self.stream_bridge.send_error(
+                "Anthropic SDK not installed. Run: pip install anthropic"
+            )
+            return
+
+        api_key = self.settings.get_password("api_key")
+        if not api_key:
+            self.stream_bridge.send_error(
+                "No API key configured. Set it in AI Bot Settings."
+            )
+            return
+
+        client = anthropic.Anthropic(api_key=api_key)
         max_iterations = self.settings.max_tool_calls_per_turn or 15
 
         for _ in range(max_iterations):
             api_messages = self._prepare_messages_for_api()
 
-            with self.client.messages.stream(
+            with client.messages.stream(
                 model=self.settings.model_name or "claude-sonnet-4-20250514",
                 max_tokens=self.settings.max_tokens_per_request or 4096,
                 system=get_system_prompt(self.user, self.company),
