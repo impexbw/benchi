@@ -1,8 +1,7 @@
 frappe.ui.form.on("AI Bot Settings", {
     refresh(frm) {
-        // Add OpenAI OAuth section with connect/disconnect buttons
-        frm.fields_dict.oauth_section && frm.fields_dict.oauth_section.$wrapper &&
-            frm.fields_dict.oauth_section.$wrapper.find(".openai-oauth-container").remove();
+        // Remove ALL previous instances first
+        frm.$wrapper.find(".openai-oauth-container").remove();
 
         let $section = (frm.fields_dict.oauth_section && frm.fields_dict.oauth_section.$wrapper)
             || frm.$wrapper.find('[data-fieldname="oauth_section"]');
