@@ -1,0 +1,8 @@
+[project]
+name = "erpnext_ai_bots"
+version = "1.0.0"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=67.0", "wheel"]
+build-backend = "setuptools.build_meta"
