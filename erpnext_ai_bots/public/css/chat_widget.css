@@ -1,19 +1,19 @@
 /* ── AI Chat Button ─────────────────────────────────────────────────────── */
 .ai-chat-btn {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
+    position: fixed !important;
+    bottom: 30px !important;
+    right: 30px !important;
     width: 52px;
     height: 52px;
     background: var(--ai-accent, #6c5ce7);
     color: white;
     border-radius: 50%;
-    display: flex;
+    display: flex !important;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1050;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    z-index: 9999 !important;
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -37,7 +37,7 @@
     border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 12px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-    z-index: 1050;
+    z-index: 9998 !important;
     display: flex;
     flex-direction: column;
     overflow: hidden;
