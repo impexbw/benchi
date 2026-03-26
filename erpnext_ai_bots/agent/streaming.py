@@ -102,9 +102,11 @@ class StreamBridge:
             "sales.get_sales_orders": "Looking up sales orders",
             "sales.get_customer_info": "Looking up customer info",
             "sales.get_revenue_summary": "Checking revenue summary",
+            "core.raw_sql": "Running database query",
+            "core.frappe_api": "Querying ERPNext data",
             "meta.spawn_subagent": "Working on complex task",
         }
-        return friendly.get(tool_name, f"Processing {tool_name}")
+        return friendly.get(tool_name, f"Looking up {tool_name.split('.')[-1].replace('_', ' ')}")
 
     def send_done(self):
         self._publish("ai_done", {"session_id": self.session_id})

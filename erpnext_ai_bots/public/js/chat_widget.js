@@ -713,8 +713,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 onToolStart: (tool) => {
                     this.$tool_indicator.show();
                     this.$tool_indicator.find(".ai-tool-name").text(`${tool}...`);
-                    // Add to thinking steps and show in bubble
-                    this._thinking_steps.push(tool);
+                    // Add to thinking steps (skip duplicates)
+                    if (!this._thinking_steps.includes(tool)) {
+                        this._thinking_steps.push(tool);
+                    }
                     if (this.$current_message) {
                         let thinking_html = this._thinking_steps.map(s =>
                             `<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> ${s}...</div>`
