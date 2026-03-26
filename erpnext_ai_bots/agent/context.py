@@ -2,13 +2,30 @@
 context.py — Live company context snapshot for the Oracle system prompt.
 
 Queries ERPNext for key business data and formats it as a plain-text block
-that gets injected into the system prompt at the start of every conversation
-turn. All queries respect the active user's permissions: no ignore_permissions.
+that gets injected into the system prompt. Results are cached in Redis for
+5 minutes per user+company to avoid repeated DB hits on every message.
+
+All queries respect the active user's permissions: no ignore_permissions.
 Each section is individually guarded so a missing DocType or permission denial
 silently produces an empty result rather than crashing prompt assembly.
 """
 
 import frappe
+
+
+_CACHE_TTL = 300  # 5 minutes
+
+
+def build_context_snapshot(company: str) -> str:
+    """Build context with Redis caching. Returns cached version if fresh."""
+    user = frappe.session.user
+    cache_key = f"ai_oracle_context:{user}:{company}"
+    cached = frappe.cache().get_value(cache_key)
+    if cached:
+        return cached
+    result = _build_context_snapshot_uncached(company)
+    frappe.cache().set_value(cache_key, result, expires_in_sec=_CACHE_TTL)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +325,7 @@ def _fmt_date(d) -> str:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def build_context_snapshot(company: str) -> str:
+def _build_context_snapshot_uncached(company: str) -> str:
     """Assemble a plain-text company snapshot for injection into the system prompt.
 
     Designed to be called once per request. All sub-queries are independently

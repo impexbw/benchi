@@ -245,10 +245,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this._hide_ctx_menu();
             const sid = this._ctx_menu_target;
             if (!sid) return;
-            frappe.confirm(
-                __("Delete this conversation? This cannot be undone."),
-                () => this._delete_session(sid)
-            );
+            this._delete_session(sid);
         });
 
         // Close context menu on outside click
