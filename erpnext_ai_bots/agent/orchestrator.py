@@ -83,38 +83,43 @@ class Orchestrator:
     # ── OpenAI (ChatGPT OAuth) path ──────────────────────────────────
 
     def _openai_loop(self):
-        """Simple request/response using the ChatGPT Codex API via OAuth token."""
+        """Send a message via the ChatGPT Codex API and stream the response
+        back to the frontend through Socket.IO.
+
+        The Codex API requires:
+          - input as a list of message objects
+          - stream=True, store=False
+          - A codex-supported model slug
+        """
         from erpnext_ai_bots.licensing.openai_codex import CodexClient
 
         client = CodexClient(user=self.user)
         system_prompt = get_system_prompt(self.user, self.company)
 
-        # Build conversation context for the prompt
-        conversation = self._build_openai_context()
+        # Build the message list for the Codex API
+        api_messages = self._build_openai_messages()
 
-        model = self.settings.model_name or "gpt-4.1"
-
-        self.stream_bridge._publish("ai_chunk", {
-            "session_id": self.session_id,
-            "text": "",
-        })
+        # Resolve model: only use settings.model_name if it is a valid
+        # codex model slug; otherwise fall back to the default.
+        model = None
+        configured_model = self.settings.model_name or ""
+        if "codex" in configured_model or configured_model.startswith("gpt-5"):
+            model = configured_model
+        # model=None lets CodexClient use its DEFAULT_CODEX_MODEL
 
         try:
-            result = client.send(
-                message=conversation,
+            # Stream deltas to the frontend as they arrive
+            result = client.send_streaming(
+                messages=api_messages,
                 model=model,
                 instructions=system_prompt,
-                stream=False,
+                on_delta=lambda delta: self.stream_bridge._publish("ai_chunk", {
+                    "session_id": self.session_id,
+                    "text": delta,
+                }),
             )
 
-            # Extract the response text
-            response_text = self._extract_openai_response(result)
-
-            # Stream the response to the client
-            self.stream_bridge._publish("ai_chunk", {
-                "session_id": self.session_id,
-                "text": response_text,
-            })
+            response_text = result.get("text", "")
 
             # Append assistant message
             self.messages.append({
@@ -123,13 +128,14 @@ class Orchestrator:
                 "timestamp": frappe.utils.now_datetime().isoformat(),
             })
 
-            # Track tokens (estimate from response if not provided)
-            input_tokens = result.get("usage", {}).get("input_tokens", 0)
-            output_tokens = result.get("usage", {}).get("output_tokens", 0)
+            # Track tokens
+            usage = result.get("usage", {})
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
             self.token_tracker.record(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                model=model,
+                model=model or "gpt-5.1-codex-mini",
             )
 
             self.stream_bridge.send_done()
@@ -143,9 +149,14 @@ class Orchestrator:
                 "timestamp": frappe.utils.now_datetime().isoformat(),
             })
 
-    def _build_openai_context(self) -> str:
-        """Build a conversation string from message history for OpenAI."""
-        parts = []
+    def _build_openai_messages(self) -> list:
+        """Build a list of message dicts from conversation history for the
+        Codex Responses API.
+
+        Returns a list like:
+          [{"role": "user", "content": "hello"}, ...]
+        """
+        api_messages = []
         for msg in self.messages[-20:]:  # Last 20 messages for context
             role = msg["role"]
             content = msg.get("content", "")
@@ -156,49 +167,8 @@ class Orchestrator:
                 ]
                 content = "\n".join(text_parts)
             if content:
-                parts.append(f"{role}: {content}")
-        return "\n\n".join(parts)
-
-    def _extract_openai_response(self, result: dict) -> str:
-        """Extract text from various OpenAI response formats."""
-        # Codex API response format
-        if "output" in result:
-            output = result["output"]
-            if isinstance(output, str):
-                return output
-            if isinstance(output, list):
-                texts = []
-                for item in output:
-                    if isinstance(item, dict):
-                        if item.get("type") == "message":
-                            for content in item.get("content", []):
-                                if content.get("type") == "output_text":
-                                    texts.append(content.get("text", ""))
-                        elif item.get("type") == "text":
-                            texts.append(item.get("text", ""))
-                return "\n".join(texts) if texts else json.dumps(result)
-
-        # Standard chat completion format
-        if "choices" in result:
-            choices = result["choices"]
-            if choices:
-                return choices[0].get("message", {}).get("content", "")
-
-        # Streaming chunks
-        if "chunks" in result:
-            texts = []
-            for chunk in result["chunks"]:
-                if "choices" in chunk:
-                    delta = chunk["choices"][0].get("delta", {})
-                    if "content" in delta:
-                        texts.append(delta["content"])
-            return "".join(texts)
-
-        # Fallback
-        if "text" in result:
-            return result["text"]
-
-        return json.dumps(result, indent=2)
+                api_messages.append({"role": role, "content": content})
+        return api_messages
 
     # ── Anthropic path ───────────────────────────────────────────────
 

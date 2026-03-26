@@ -133,7 +133,23 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             });
 
             this.session_id = result.message.session_id;
+
+            // Set up stream handler IMMEDIATELY after getting session_id
+            // (before the background worker can fire events)
             this._setup_stream();
+
+            // Safety timeout: if no ai_done/ai_error arrives within 2 min,
+            // unblock the UI so the user is not stuck forever.
+            this._stream_timeout = setTimeout(() => {
+                if (this.is_streaming) {
+                    this._finish_streaming();
+                    if (!this.current_message_text) {
+                        this.$current_message.html(
+                            '<span class="text-muted">No response received. The server may be busy -- please try again.</span>'
+                        );
+                    }
+                }
+            }, 120000);
         } catch (err) {
             this._finish_streaming();
             this.$current_message.html(
@@ -179,6 +195,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.is_streaming = false;
         this.$tool_indicator.hide();
         this.$panel.find(".ai-chat-send").prop("disabled", false);
+        if (this._stream_timeout) {
+            clearTimeout(this._stream_timeout);
+            this._stream_timeout = null;
+        }
         this._cleanup_stream();
     }
 
