@@ -123,12 +123,25 @@ def get_sessions(limit: int = 20, offset: int = 0):
         filters={"user": frappe.session.user},
         fields=[
             "name", "title", "status", "category", "message_count",
-            "last_message_at", "total_cost_usd", "creation",
+            "last_message_at", "total_cost_usd", "creation", "pinned",
         ],
         order_by="last_message_at desc",
         limit_page_length=min(int(limit), 50),
         limit_start=int(offset),
     )
+
+
+@frappe.whitelist()
+def toggle_pin(session_id: str):
+    """Toggle the pinned state of a chat session."""
+    session_user = frappe.db.get_value("AI Chat Session", session_id, "user")
+    if session_user != frappe.session.user:
+        frappe.throw(_("Access denied"), frappe.PermissionError)
+    current = frappe.db.get_value("AI Chat Session", session_id, "pinned")
+    new_val = 0 if current else 1
+    frappe.db.set_value("AI Chat Session", session_id, "pinned", new_val)
+    frappe.db.commit()
+    return {"pinned": bool(new_val)}
 
 
 @frappe.whitelist()

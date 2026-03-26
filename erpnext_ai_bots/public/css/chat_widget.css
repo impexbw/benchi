@@ -313,6 +313,17 @@
     background: rgba(239, 68, 68, 0.08) !important;
 }
 
+/* ── Pin icon inside session title ─────────────────────────────────────── */
+.ai-pin-icon {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 4px;
+    color: var(--ai-accent, #6c5ce7);
+    opacity: 0.7;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
 /* ── Main chat area ─────────────────────────────────────────────────────── */
 .ai-chat-main {
     flex: 1;

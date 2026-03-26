@@ -245,6 +245,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         // Context menu (shared, appended to body)
         this.$ctx_menu = $(`
             <div class="ai-session-ctx-menu" style="display:none">
+                <button class="ai-ctx-pin">Pin</button>
                 <button class="ai-ctx-rename">Rename</button>
                 <button class="ai-ctx-delete">Delete</button>
             </div>
@@ -293,7 +294,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         });
 
         // Context menu actions
-        this.$ctx_menu.find(".ai-ctx-rename").on("click", () => {
+        this.$ctx_menu.find(".ai-ctx-rename").on("click", (e) => {
+            e.stopPropagation();
             const sid = this._ctx_menu_target;
             this._hide_ctx_menu();
             if (!sid) return;
@@ -305,15 +307,26 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             }
         });
 
-        this.$ctx_menu.find(".ai-ctx-delete").on("click", () => {
+        this.$ctx_menu.find(".ai-ctx-delete").on("click", (e) => {
+            e.stopPropagation();
             const sid = this._ctx_menu_target;
             this._hide_ctx_menu();
             if (!sid) return;
             this._delete_session(sid);
         });
 
-        // Close context menu on outside click
-        $(document).on("click.ai_ctx", (e) => {
+        this.$ctx_menu.find(".ai-ctx-pin").on("click", (e) => {
+            e.stopPropagation();
+            const sid = this._ctx_menu_target;
+            this._hide_ctx_menu();
+            if (!sid) return;
+            this._toggle_pin_session(sid);
+        });
+
+        // Close context menu on outside mousedown — using mousedown instead of
+        // click so it fires before the menu button's own click handler, avoiding
+        // the race condition where _ctx_menu_target gets nulled prematurely.
+        $(document).on("mousedown.ai_ctx", (e) => {
             if (!$(e.target).closest(".ai-session-ctx-menu").length) {
                 this._hide_ctx_menu();
             }
@@ -432,7 +445,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 .find(`.ai-session-item[data-sid="${session_id}"]`)
                 .addClass("active");
 
+            // Let the DOM finish rendering all message nodes before scrolling
             this._scroll_bottom();
+            setTimeout(() => this._scroll_bottom(), 100);
         } catch (e) {
             // Silently fail
         }
@@ -470,16 +485,22 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 (s.category || "General") === this._active_category
               );
 
+        // Pinned sessions float to the top, order within each group preserved
+        const sorted = [
+            ...filtered.filter(s => s.pinned),
+            ...filtered.filter(s => !s.pinned),
+        ];
+
         this.$session_list.empty();
 
-        if (!filtered.length) {
+        if (!sorted.length) {
             this.$session_list.append(
                 `<div class="ai-sidebar-empty">No conversations yet</div>`
             );
             return;
         }
 
-        for (const s of filtered) {
+        for (const s of sorted) {
             const title   = (s.title || s.name).substring(0, 40);
             const cat     = s.category || "General";
             const color   = erpnext_ai_bots.CATEGORY_COLORS[cat] || "gray";
@@ -488,11 +509,19 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 ? frappe.datetime.str_to_user(s.last_message_at.substring(0, 10))
                 : frappe.datetime.str_to_user(s.creation.substring(0, 10));
             const is_active = s.name === this.session_id ? " active" : "";
+            // Subtle pin icon shown only for pinned sessions
+            const pin_icon  = s.pinned
+                ? `<span class="ai-pin-icon" title="Pinned">
+                       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                           <path d="M16 1v6l2 4H6l2-4V1h8zM12 21v-6m-4-4h8"/>
+                       </svg>
+                   </span>`
+                : "";
 
             const $item = $(`
                 <div class="ai-session-item${is_active}" data-sid="${s.name}" title="${frappe.utils.escape_html(s.title || s.name)}">
                     <div class="ai-session-item-top">
-                        <span class="ai-session-title">${frappe.utils.escape_html(title)}</span>
+                        <span class="ai-session-title">${pin_icon}${frappe.utils.escape_html(title)}</span>
                         <span class="ai-cat-badge ai-cat-${color}">${cat}</span>
                     </div>
                     <div class="ai-session-item-meta">
@@ -532,9 +561,13 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     _show_ctx_menu(x, y, session_id) {
         this._ctx_menu_target = session_id;
+        // Update pin label to reflect current pinned state
+        const session = this._all_sessions.find(s => s.name === session_id);
+        const is_pinned = session && session.pinned;
+        this.$ctx_menu.find(".ai-ctx-pin").text(is_pinned ? __("Unpin") : __("Pin"));
         // Keep menu within viewport
         const menu_w = 140;
-        const menu_h = 76;
+        const menu_h = 96;
         const left = Math.min(x, window.innerWidth - menu_w - 8);
         const top  = Math.min(y, window.innerHeight - menu_h - 8);
         this.$ctx_menu.css({ left: left, top: top }).show();
@@ -561,6 +594,24 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             frappe.show_alert({ message: __("Conversation renamed"), indicator: "green" });
         } catch (e) {
             frappe.show_alert({ message: __("Could not rename conversation"), indicator: "red" });
+        }
+    }
+
+    async _toggle_pin_session(session_id) {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.toggle_pin",
+                args: { session_id: session_id },
+                async: true,
+            });
+            // Update local cache
+            const s = this._all_sessions.find(x => x.name === session_id);
+            if (s) s.pinned = r.message && r.message.pinned ? 1 : 0;
+            this._render_sidebar_sessions();
+            const label = s && s.pinned ? __("Conversation pinned") : __("Conversation unpinned");
+            frappe.show_alert({ message: label, indicator: "green" });
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not update pin"), indicator: "red" });
         }
     }
 

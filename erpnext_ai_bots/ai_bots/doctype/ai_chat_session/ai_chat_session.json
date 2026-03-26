@@ -12,6 +12,7 @@
   "status",
   "title",
   "category",
+  "pinned",
   "conversation_section",
   "messages_json",
   "message_count",
@@ -68,6 +69,12 @@
    "in_list_view": 1,
    "label": "Category",
    "options": "General\nFinance\nSales\nStock\nHR"
+  },
+  {
+   "default": "0",
+   "fieldname": "pinned",
+   "fieldtype": "Check",
+   "label": "Pinned"
   },
   {
    "fieldname": "conversation_section",
