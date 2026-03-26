@@ -774,13 +774,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     this._scroll_bottom();
                 },
                 onToolStart: (tool) => {
-                    this.$tool_indicator.show();
-                    this.$tool_indicator.find(".ai-tool-name").text(`${tool}...`);
                     // Update the inline thinking indicator with tool steps
                     if (!this._thinking_steps.includes(tool)) {
                         this._thinking_steps.push(tool);
                     }
-                    // Update inline thinking text
                     if (this.$thinking) {
                         this.$thinking.html(
                             this._thinking_steps.map(s =>
@@ -791,10 +788,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     }
                 },
                 onToolResult: () => {
-                    clearTimeout(this._tool_hide_timeout);
-                    this._tool_hide_timeout = setTimeout(() => {
-                        this.$tool_indicator.hide();
-                    }, 1200);
+                    // no-op — inline thinking handles display
                 },
                 onDone: () => {
                     this._finish_streaming();
