@@ -119,7 +119,12 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
-   "write": 1
+   "write": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "import": 0,
+   "select": 0
   }
  ],
  "sort_field": "ref_doctype",

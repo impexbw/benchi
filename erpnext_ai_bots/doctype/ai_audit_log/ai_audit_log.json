@@ -120,7 +120,12 @@
    "report": 0,
    "role": "System Manager",
    "share": 0,
-   "write": 0
+   "write": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "import": 0,
+   "select": 0
   }
  ],
  "sort_field": "creation",

@@ -6,3 +6,7 @@ requires-python = ">=3.10"
 [build-system]
 requires = ["setuptools>=67.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["erpnext_ai_bots/tests"]
+pythonpath = ["."]
