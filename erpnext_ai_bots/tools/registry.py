@@ -11,6 +11,8 @@ TOOL_MAP = {
     "core.update_document": "erpnext_ai_bots.tools.core.update_document.UpdateDocumentTool",
     "core.submit_document": "erpnext_ai_bots.tools.core.submit_document.SubmitDocumentTool",
     "core.run_report": "erpnext_ai_bots.tools.core.run_report.RunReportTool",
+    "core.raw_sql": "erpnext_ai_bots.tools.core.raw_sql.RawSQLTool",
+    "core.frappe_api": "erpnext_ai_bots.tools.core.frappe_api.FrappeAPITool",
 
     # Accounting tools
     "accounting.get_trial_balance": "erpnext_ai_bots.tools.accounting.trial_balance.GetTrialBalanceTool",

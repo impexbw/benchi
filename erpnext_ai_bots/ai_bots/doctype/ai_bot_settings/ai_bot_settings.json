@@ -33,7 +33,13 @@
   "allowed_doctypes_section",
   "allowed_read_doctypes",
   "allowed_write_doctypes",
-  "blocked_doctypes"
+  "blocked_doctypes",
+  "db_section",
+  "db_host",
+  "db_port",
+  "db_user",
+  "db_password",
+  "db_name"
  ],
  "fields": [
   {
@@ -207,6 +213,39 @@
    "fieldname": "blocked_doctypes",
    "fieldtype": "Small Text",
    "label": "Blocked DocTypes"
+  },
+  {
+   "fieldname": "db_section",
+   "fieldtype": "Section Break",
+   "label": "Database Connection (Optional)",
+   "description": "Leave blank to use the default Frappe DB connection. Fill in only when raw_sql should connect to a separate database."
+  },
+  {
+   "default": "localhost",
+   "fieldname": "db_host",
+   "fieldtype": "Data",
+   "label": "DB Host"
+  },
+  {
+   "default": "3306",
+   "fieldname": "db_port",
+   "fieldtype": "Data",
+   "label": "DB Port"
+  },
+  {
+   "fieldname": "db_user",
+   "fieldtype": "Data",
+   "label": "DB Username"
+  },
+  {
+   "fieldname": "db_password",
+   "fieldtype": "Password",
+   "label": "DB Password"
+  },
+  {
+   "fieldname": "db_name",
+   "fieldtype": "Data",
+   "label": "Database Name"
   }
  ],
  "issingle": 1,
