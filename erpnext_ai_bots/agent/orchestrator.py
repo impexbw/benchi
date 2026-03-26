@@ -195,11 +195,21 @@ class Orchestrator:
             )
 
         except Exception as e:
-            error_msg = str(e)
-            self.stream_bridge.send_error(error_msg)
+            raw_error = str(e)
+            # Log the technical error for debugging
+            frappe.log_error(title="AI Oracle Error", message=frappe.get_traceback())
+            # Show a user-friendly message
+            friendly_msg = "I ran into an issue processing your request. Please try again."
+            if "permission" in raw_error.lower():
+                friendly_msg = "You don't have permission for that action. Ask your admin for access."
+            elif "not found" in raw_error.lower():
+                friendly_msg = "I couldn't find what you're looking for. Could you double-check the name?"
+            elif "timeout" in raw_error.lower():
+                friendly_msg = "The request took too long. Please try again with a simpler question."
+            self.stream_bridge.send_error(friendly_msg)
             self.messages.append({
                 "role": "assistant",
-                "content": [{"type": "text", "text": f"Error: {error_msg}"}],
+                "content": [{"type": "text", "text": friendly_msg}],
                 "timestamp": frappe.utils.now_datetime().isoformat(),
             })
 
@@ -260,16 +270,22 @@ class Orchestrator:
         return blocks
 
     def _openai_output_items_for_input(self, output_items: list) -> list:
-        """Return the subset of output items that must be appended to the
-        Codex API input array when sending tool results back.
+        """Return function_call items formatted for the Codex API input.
 
-        Only ``function_call`` items need to be echoed; message/text items
-        are already implied by the conversation context.
+        The API requires these exact fields when echoing function calls back:
+        type, id, call_id, name, arguments. Extra fields cause errors.
         """
-        return [
-            item for item in output_items
-            if isinstance(item, dict) and item.get("type") == "function_call"
-        ]
+        items = []
+        for item in output_items:
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                items.append({
+                    "type": "function_call",
+                    "id": item.get("id", ""),
+                    "call_id": item.get("call_id", ""),
+                    "name": item.get("name", ""),
+                    "arguments": item.get("arguments", "{}"),
+                })
+        return items
 
     def _process_openai_tool_calls(self, function_calls: list) -> list:
         """Execute OpenAI function calls with permission checks, sanitization,
