@@ -188,11 +188,11 @@
 }
 
 .ai-session-item:hover {
-    background: var(--control-bg, #e2e8f0);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .ai-session-item.active {
-    background: rgba(108, 92, 231, 0.12);
+    background: rgba(108, 92, 231, 0.18);
     border-left: 3px solid var(--primary, #6c5ce7);
     border-color: transparent;
     border-left-color: var(--primary, #6c5ce7);
@@ -207,28 +207,29 @@
 }
 
 .ai-session-title {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
-    color: var(--text-color, #334155);
-    line-height: 1.4;
+    color: #e2e8f0;
+    line-height: 1.45;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     flex: 1;
     min-width: 0;
+    letter-spacing: 0.01em;
 }
 
 .ai-session-item.active .ai-session-title {
-    color: var(--primary, #6c5ce7);
+    color: #fff;
     font-weight: 600;
 }
 
 .ai-session-item-meta {
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
-    color: var(--text-muted, #94a3b8);
+    font-size: 11px;
+    color: #94a3b8;
 }
 
 /* Empty state */
