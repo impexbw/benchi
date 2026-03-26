@@ -18,7 +18,7 @@ app_include_css = "/assets/erpnext_ai_bots/css/chat_widget.css"
 
 # DocType permissions
 has_permission = {
-    "AI Chat Session": "erpnext_ai_bots.erpnext_ai_bots.doctype.ai_chat_session.ai_chat_session.has_permission",
+    "AI Chat Session": "erpnext_ai_bots.doctype.ai_chat_session.ai_chat_session.has_permission",
 }
 
 # Scheduled tasks
