@@ -49,6 +49,51 @@ erpnext_ai_bots.render_markdown = function (text) {
         }
     );
 
+    // Third pass: detect 2-column "Metric/Field/Property/Detail" tables and
+    // render them as styled metric cards instead of a plain HTML table.
+    html = html.replace(/<table>([\s\S]*?)<\/table>/g, function (match, inner) {
+        // Extract header cells — only proceed when there are exactly 2 columns
+        const headers = inner.match(/<th>(.*?)<\/th>/g);
+        if (!headers || headers.length !== 2) return match;
+
+        const first_header = headers[0].replace(/<\/?th>/g, "").trim().toLowerCase();
+        const metric_headers = ["metric", "field", "property", "detail"];
+        if (!metric_headers.includes(first_header)) return match;
+
+        // Pull every data row that has exactly 2 <td> cells
+        const rows = inner.match(/<tr><td>(.*?)<\/td><td>(.*?)<\/td><\/tr>/g);
+        if (!rows || !rows.length) return match;
+
+        let cards = '<div class="ai-metric-grid">';
+        rows.forEach(function (row) {
+            const cells = row.match(/<td>(.*?)<\/td>/g);
+            if (!cells || cells.length < 2) return;
+            const label = cells[0].replace(/<\/?td>/g, "");
+            const value = cells[1].replace(/<\/?td>/g, "");
+            cards +=
+                '<div class="ai-metric-card">' +
+                    '<div class="ai-metric-value">' + value + "</div>" +
+                    '<div class="ai-metric-label">' + label + "</div>" +
+                "</div>";
+        });
+        cards += "</div>";
+        return cards;
+    });
+
+    // Fourth pass: convert ERPNext document IDs (e.g. SI-2026-00001,
+    // SAL-QTN-2026-00264) into clickable links that open the record.
+    // The pattern requires a known prefix, at least one separator segment,
+    // and ends with 3+ digit run so plain words are never matched.
+    html = html.replace(
+        /\b((?:SI|PI|SAL-QTN|PO|SO|DN|PR|JE|SE|LC|PE|SINV|PINV|QTN|ORD|IBMOL2?-\w+-\d+-\d+|LTH-\w+-\d+|IBKAN-\w+-\d+|IBTLK-\w+-\d+|AI-CHAT)-[\w-]+\d{3,})\b/g,
+        function (match) {
+            return (
+                '<a href="/app/' + encodeURIComponent(match) +
+                '" class="ai-doc-link" target="_blank">' + match + "</a>"
+            );
+        }
+    );
+
     return html;
 };
 
@@ -81,6 +126,25 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.render();
         this.bind_events();
         this._load_last_session();
+        this._load_accent_color();
+    }
+
+    // ── Accent color ─────────────────────────────────────────────────
+
+    async _load_accent_color() {
+        // Fetch the accent_color setting from AI Bot Settings and apply it
+        // as a CSS custom property so every --ai-accent reference updates.
+        try {
+            const r = await frappe.call({
+                method: "frappe.client.get_value",
+                args: { doctype: "AI Bot Settings", fieldname: "accent_color" },
+                async: true,
+            });
+            const color = (r.message && r.message.accent_color) || "#6c5ce7";
+            document.documentElement.style.setProperty("--ai-accent", color);
+        } catch (e) {
+            // Silently fall back to the CSS default (#6c5ce7)
+        }
     }
 
     // ── DOM ─────────────────────────────────────────────────────────

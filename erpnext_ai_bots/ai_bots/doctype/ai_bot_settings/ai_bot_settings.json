@@ -7,6 +7,7 @@
  "field_order": [
   "deployment_section",
   "deployment_mode",
+  "accent_color",
   "ai_provider_section",
   "provider",
   "api_key",
@@ -54,6 +55,13 @@
    "label": "Deployment Mode",
    "options": "Community",
    "read_only": 1
+  },
+  {
+   "default": "#6c5ce7",
+   "description": "Primary accent color for the AI chat interface",
+   "fieldname": "accent_color",
+   "fieldtype": "Color",
+   "label": "Accent Color"
   },
   {
    "fieldname": "ai_provider_section",
