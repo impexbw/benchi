@@ -569,17 +569,17 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 if (this.is_streaming) {
                     this._finish_streaming();
                     if (!this.current_message_text) {
-                        this.$current_message.html(
-                            '<span class="text-muted">No response received. The server may be busy -- please try again.</span>'
-                        );
+                        this.$current_message
+                            .addClass("ai-msg-error")
+                            .html('<span class="text-muted">No response received. The server may be busy — please try again.</span>');
                     }
                 }
             }, 120000);
         } catch (err) {
             this._finish_streaming();
-            this.$current_message.html(
-                '<span class="text-danger">Something went wrong. Please try again.</span>'
-            );
+            this.$current_message
+                .addClass("ai-msg-error")
+                .html('<span class="text-danger">Something went wrong. Please try again.</span>');
         }
     }
 
@@ -710,7 +710,12 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     }
                 },
                 onToolResult: () => {
-                    this.$tool_indicator.hide();
+                    // Keep the indicator visible for at least 1 second so it
+                    // doesn't flash and disappear before the user registers it.
+                    clearTimeout(this._tool_hide_timeout);
+                    this._tool_hide_timeout = setTimeout(() => {
+                        this.$tool_indicator.hide();
+                    }, 1000);
                 },
                 onDone: () => {
                     this._finish_streaming();
@@ -721,7 +726,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 },
                 onError: (error) => {
                     this._finish_streaming();
-                    this.add_message("assistant", `**Error:** ${error}`);
+                    const $err = this.add_message("assistant", `**Error:** ${error}`);
+                    $err.addClass("ai-msg-error");
                 },
             }
         );
@@ -729,11 +735,20 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     _finish_streaming() {
         this.is_streaming = false;
+        // Cancel any pending tool-hide delay and hide immediately
+        clearTimeout(this._tool_hide_timeout);
+        this._tool_hide_timeout = null;
         this.$tool_indicator.hide();
         this.$panel.find(".ai-chat-send").prop("disabled", false);
         if (this._stream_timeout) {
             clearTimeout(this._stream_timeout);
             this._stream_timeout = null;
+        }
+        // Apply data-result class if the message contains a table
+        if (this.$current_message) {
+            if (this.$current_message.find("table").length) {
+                this.$current_message.addClass("ai-msg-data");
+            }
         }
         this._cleanup_stream();
     }
