@@ -542,23 +542,32 @@
     border-radius: 4px;
 }
 
-/* ── Thinking indicator ─────────────────────────────────────────────────── */
-.ai-thinking {
+/* ── Thinking block — accumulated steps shown above response ──────────── */
+.ai-thinking-block {
+    border-bottom: 1px solid rgba(108, 92, 231, 0.25);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+.ai-thinking-step {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--text-muted, #64748b);
+    color: var(--primary, #6c5ce7);
+    font-size: 12px;
     font-style: italic;
-    font-size: 13px;
+    padding: 3px 0;
+    opacity: 0.9;
 }
 
 .ai-thinking-dot {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
     background: var(--primary, #6c5ce7);
     border-radius: 50%;
     animation: ai-pulse 1.2s ease-in-out infinite;
+    flex-shrink: 0;
 }
 
 @keyframes ai-pulse {

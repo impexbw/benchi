@@ -10,22 +10,24 @@ _CATEGORY_KEYWORDS = {
     "Finance": [
         "invoice", "payment", "journal", "bank", "balance",
         "p&l", "profit", "loss", "ledger", "account", "tax",
-        "receivable", "payable", "expense", "budget",
+        "receivable", "payable", "expense", "budget", "supplier",
+        "purchase", "overdue", "outstanding", "credit", "debit",
+        "revenue", "cost", "financial", "fiscal",
     ],
     "Sales": [
-        "quotation", "customer", "order", "pipeline", "revenue",
+        "quotation", "customer", "order", "pipeline", "quote",
         "lead", "opportunity", "crm", "sale", "deal", "prospect",
-        "contract", "discount",
+        "contract", "discount", "pricing", "client",
     ],
     "Stock": [
         "stock", "item", "warehouse", "inventory", "reorder",
         "material", "bin", "transfer", "receipt", "delivery",
-        "batch", "serial",
+        "batch", "serial", "product", "goods",
     ],
     "HR": [
         "leave", "salary", "employee", "attendance", "hr",
         "payroll", "appraisal", "recruitment", "department",
-        "overtime", "holiday",
+        "overtime", "holiday", "staff", "worker",
     ],
 }
 
@@ -184,7 +186,7 @@ def delete_session(session_id: str):
     if session_user != frappe.session.user:
         frappe.throw(_("Access denied"), frappe.PermissionError)
 
-    frappe.delete_doc("AI Chat Session", session_id, ignore_permissions=True)
+    frappe.delete_doc("AI Chat Session", session_id, ignore_permissions=True, force=True)
     frappe.db.commit()
     return {"status": "deleted"}
 

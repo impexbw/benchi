@@ -539,6 +539,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         // Create empty bot bubble to stream into
         this.$current_message = this.add_message("assistant", "");
         this.current_message_text = "";
+        this._thinking_steps = [];
 
         try {
             const result = await frappe.call({
@@ -695,27 +696,40 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             {
                 onChunk: (text) => {
                     this.current_message_text += text;
+                    // Build the full HTML: thinking steps + response text
+                    let thinking_html = this._thinking_steps.length
+                        ? `<div class="ai-thinking-block">${this._thinking_steps.map(s =>
+                            `<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> ${s}</div>`
+                          ).join("")}</div>`
+                        : "";
                     this.$current_message.html(
-                        erpnext_ai_bots.render_markdown(this.current_message_text)
+                        thinking_html + erpnext_ai_bots.render_markdown(this.current_message_text)
                     );
                     this._scroll_bottom();
                 },
                 onToolStart: (tool) => {
                     this.$tool_indicator.show();
                     this.$tool_indicator.find(".ai-tool-name").text(`${tool}...`);
-                    if (this.$current_message && !this.current_message_text) {
+                    // Add to thinking steps and show in bubble
+                    this._thinking_steps.push(tool);
+                    if (this.$current_message) {
+                        let thinking_html = this._thinking_steps.map(s =>
+                            `<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> ${s}...</div>`
+                        ).join("");
+                        let response_html = this.current_message_text
+                            ? erpnext_ai_bots.render_markdown(this.current_message_text)
+                            : "";
                         this.$current_message.html(
-                            `<span class="ai-thinking"><span class="ai-thinking-dot"></span> ${tool}...</span>`
+                            `<div class="ai-thinking-block">${thinking_html}</div>${response_html}`
                         );
+                        this._scroll_bottom();
                     }
                 },
                 onToolResult: () => {
-                    // Keep the indicator visible for at least 1 second so it
-                    // doesn't flash and disappear before the user registers it.
                     clearTimeout(this._tool_hide_timeout);
                     this._tool_hide_timeout = setTimeout(() => {
                         this.$tool_indicator.hide();
-                    }, 1000);
+                    }, 1200);
                 },
                 onDone: () => {
                     this._finish_streaming();
