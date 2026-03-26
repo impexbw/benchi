@@ -217,10 +217,11 @@ class Orchestrator:
         """Build the initial flat input list for the Codex Responses API
         from the stored conversation history (last 20 turns).
 
-        Plain text messages become ``{"role": ..., "content": "..."}`` items.
-        Turns that contain function_call_output content (tool results stored
-        from a previous OpenAI loop) are re-emitted verbatim so the model
-        has the full context.
+        Only plain user/assistant text messages are included. Tool call
+        history (function_call and function_call_output items) from prior
+        requests are EXCLUDED because the Codex Responses API treats each
+        request independently — it doesn't remember previous function calls,
+        so sending orphaned tool results causes "No tool call found" errors.
         """
         api_messages = []
         for msg in self.messages[-20:]:
@@ -228,19 +229,18 @@ class Orchestrator:
             content = msg.get("content", "")
 
             if isinstance(content, list):
-                # Check if this turn contains function_call_output items
-                # (stored by a previous _openai_loop iteration).
-                tool_outputs = [
-                    b for b in content
-                    if isinstance(b, dict)
-                    and b.get("type") == "function_call_output"
-                ]
-                if tool_outputs:
-                    # Re-emit each tool result as a separate input item.
-                    api_messages.extend(tool_outputs)
+                # Skip turns that contain function_call_output items
+                # (tool results from previous loop iterations).
+                has_tool_content = any(
+                    isinstance(b, dict) and b.get("type") in (
+                        "function_call_output", "function_call"
+                    )
+                    for b in content
+                )
+                if has_tool_content:
                     continue
 
-                # Otherwise extract plain text parts
+                # Extract plain text parts
                 text_parts = [
                     b.get("text", "") for b in content
                     if isinstance(b, dict) and b.get("type") == "text"
