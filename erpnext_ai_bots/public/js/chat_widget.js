@@ -400,7 +400,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 onToolStart: (tool) => {
                     this.$tool_indicator.show();
                     this.$tool_indicator.find(".ai-tool-name").text(
-                        `Running ${tool}...`
+                        `${tool}...`
                     );
                 },
                 onToolResult: () => {

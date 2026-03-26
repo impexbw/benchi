@@ -43,16 +43,53 @@ class StreamBridge:
     def send_tool_start(self, tool_name: str, tool_input: dict):
         self._publish("ai_tool_start", {
             "session_id": self.session_id,
-            "tool": tool_name,
+            "tool": self._friendly_tool_name(tool_name, tool_input),
             "input": self._safe_summary(tool_input),
         })
 
     def send_tool_result(self, tool_name: str, result: dict):
         self._publish("ai_tool_result", {
             "session_id": self.session_id,
-            "tool": tool_name,
+            "tool": self._friendly_tool_name(tool_name, {}),
             "result": self._safe_summary(result),
         })
+
+    def _friendly_tool_name(self, tool_name: str, tool_input: dict) -> str:
+        """Convert technical tool names to user-friendly descriptions."""
+        doctype = tool_input.get("doctype", "")
+        name = tool_input.get("name", "")
+
+        friendly = {
+            "core.get_list": f"Searching {doctype or 'records'}",
+            "core.get_document": f"Looking up {doctype} {name}".strip(),
+            "core.create_document": f"Creating {doctype or 'document'}",
+            "core.update_document": f"Updating {doctype} {name}".strip(),
+            "core.submit_document": f"Submitting {doctype} {name}".strip(),
+            "core.run_report": f"Running report",
+            "accounting.get_trial_balance": "Fetching trial balance",
+            "accounting.get_outstanding_invoices": "Checking outstanding invoices",
+            "accounting.get_bank_balances": "Checking bank balances",
+            "accounting.get_profit_and_loss": "Running profit & loss report",
+            "accounting.create_journal_entry": "Creating journal entry",
+            "accounting.get_account_balance": "Checking account balance",
+            "hr.get_leave_balance": "Checking leave balance",
+            "hr.create_leave_application": "Creating leave application",
+            "hr.get_salary_slip": "Looking up salary slip",
+            "hr.get_attendance_summary": "Checking attendance",
+            "hr.get_employee_info": "Looking up employee info",
+            "stock.get_stock_balance": "Checking stock levels",
+            "stock.create_stock_entry": "Creating stock entry",
+            "stock.get_warehouse_summary": "Checking warehouse summary",
+            "stock.get_item_info": "Looking up item details",
+            "stock.get_reorder_levels": "Checking reorder levels",
+            "sales.get_pipeline": "Checking sales pipeline",
+            "sales.create_quotation": "Creating quotation",
+            "sales.get_sales_orders": "Looking up sales orders",
+            "sales.get_customer_info": "Looking up customer info",
+            "sales.get_revenue_summary": "Checking revenue summary",
+            "meta.spawn_subagent": "Working on complex task",
+        }
+        return friendly.get(tool_name, f"Processing {tool_name}")
 
     def send_done(self):
         self._publish("ai_done", {"session_id": self.session_id})
