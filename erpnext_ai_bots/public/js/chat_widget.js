@@ -4,12 +4,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     constructor() {
         this.session_id = null;
         this.is_open = false;
+        this.is_expanded = false;
         this.is_streaming = false;
         this.stream_handler = null;
         this.$current_message = null;
         this.current_message_text = "";
         this.render();
         this.bind_events();
+        this._load_last_session();
     }
 
     render() {
@@ -34,8 +36,27 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                                 <line x1="5" y1="12" x2="19" y2="12"/>
                             </svg>
                         </button>
+                        <button class="ai-chat-expand btn btn-xs" title="Expand">
+                            <svg class="expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <polyline points="15 3 21 3 21 9"/>
+                                <polyline points="9 21 3 21 3 15"/>
+                                <line x1="21" y1="3" x2="14" y2="10"/>
+                                <line x1="3" y1="21" x2="10" y2="14"/>
+                            </svg>
+                            <svg class="shrink-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2" style="display:none">
+                                <polyline points="4 14 10 14 10 20"/>
+                                <polyline points="20 10 14 10 14 4"/>
+                                <line x1="14" y1="10" x2="21" y2="3"/>
+                                <line x1="3" y1="21" x2="10" y2="14"/>
+                            </svg>
+                        </button>
                         <button class="ai-chat-close btn btn-xs">&times;</button>
                     </div>
+                </div>
+                <div class="ai-chat-sessions-bar" style="display:none">
+                    <select class="ai-chat-session-select form-control form-control-sm"></select>
                 </div>
                 <div class="ai-chat-messages"></div>
                 <div class="ai-chat-tool-indicator" style="display:none">
@@ -66,6 +87,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$btn.on("click", () => this.toggle());
         this.$panel.find(".ai-chat-close").on("click", () => this.toggle());
         this.$panel.find(".ai-chat-new-session").on("click", () => this.new_session());
+        this.$panel.find(".ai-chat-expand").on("click", () => this.toggle_expand());
         this.$panel.find(".ai-chat-send").on("click", () => this.send());
         this.$input.on("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -79,6 +101,12 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.style.height = "auto";
             this.style.height = Math.min(this.scrollHeight, 120) + "px";
         });
+
+        // Session selector
+        this.$panel.find(".ai-chat-session-select").on("change", (e) => {
+            const sid = $(e.target).val();
+            if (sid) this._load_session(sid);
+        });
     }
 
     toggle() {
@@ -88,11 +116,27 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         if (this.is_open) this.$input.focus();
     }
 
+    toggle_expand() {
+        this.is_expanded = !this.is_expanded;
+        this.$panel.toggleClass("ai-chat-panel-expanded", this.is_expanded);
+        this.$panel.find(".expand-icon").toggle(!this.is_expanded);
+        this.$panel.find(".shrink-icon").toggle(this.is_expanded);
+        this.$panel.find(".ai-chat-sessions-bar").toggle(this.is_expanded);
+
+        if (this.is_expanded) {
+            this._load_sessions_list();
+        }
+
+        this._scroll_bottom();
+    }
+
     new_session() {
         this.session_id = null;
         this.$messages.empty();
         this._cleanup_stream();
         this.$input.focus();
+        // Update session selector
+        this.$panel.find(".ai-chat-session-select").val("");
     }
 
     add_message(role, content) {
@@ -111,6 +155,80 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     _scroll_bottom() {
         this.$messages.scrollTop(this.$messages[0].scrollHeight);
     }
+
+    // ── Session persistence ─────────────────────────────────────────
+
+    async _load_last_session() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.get_sessions",
+                args: { limit: 1, offset: 0 },
+                async: true,
+            });
+            const sessions = r.message || [];
+            if (sessions.length && sessions[0].status === "Active") {
+                this.session_id = sessions[0].name;
+                await this._load_session(this.session_id);
+            }
+        } catch (e) {
+            // Silently fail — widget still works for new sessions
+        }
+    }
+
+    async _load_session(session_id) {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.get_history",
+                args: { session_id: session_id },
+                async: true,
+            });
+            const data = r.message || {};
+            this.session_id = session_id;
+            this.$messages.empty();
+
+            const messages = data.messages || [];
+            for (const msg of messages) {
+                let content = msg.content;
+                if (Array.isArray(content)) {
+                    // Extract text from content blocks
+                    const texts = content
+                        .filter(b => b.type === "text" && b.text)
+                        .map(b => b.text);
+                    content = texts.join("\n");
+                }
+                if (content && msg.role !== "system") {
+                    this.add_message(msg.role, content);
+                }
+            }
+
+            this._scroll_bottom();
+        } catch (e) {
+            // Silently fail
+        }
+    }
+
+    async _load_sessions_list() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.get_sessions",
+                args: { limit: 20, offset: 0 },
+                async: true,
+            });
+            const sessions = r.message || [];
+            const $select = this.$panel.find(".ai-chat-session-select");
+            $select.empty();
+            $select.append('<option value="">-- Select a conversation --</option>');
+            for (const s of sessions) {
+                const label = (s.title || s.name).substring(0, 60);
+                const selected = s.name === this.session_id ? " selected" : "";
+                $select.append(`<option value="${s.name}"${selected}>${label} (${s.message_count || 0} msgs)</option>`);
+            }
+        } catch (e) {
+            // Silently fail
+        }
+    }
+
+    // ── Send message ────────────────────────────────────────────────
 
     async send(retry_message) {
         const message = retry_message || this.$input.val().trim();
@@ -143,13 +261,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             }
 
             this.session_id = result.message.session_id;
-
-            // Set up stream handler IMMEDIATELY after getting session_id
-            // (before the background worker can fire events)
             this._setup_stream();
 
-            // Safety timeout: if no ai_done/ai_error arrives within 2 min,
-            // unblock the UI so the user is not stuck forever.
+            // Safety timeout: 2 min
             this._stream_timeout = setTimeout(() => {
                 if (this.is_streaming) {
                     this._finish_streaming();
@@ -169,7 +283,6 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     _show_connect_flow(pending_message) {
-        // Remove any existing connect flow
         this.$messages.find(".ai-connect-flow").remove();
 
         const $flow = $(`
@@ -197,7 +310,6 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$messages.append($flow);
         this._scroll_bottom();
 
-        // Start OAuth flow
         $flow.find(".ai-connect-start-btn").on("click", () => {
             frappe.call({
                 method: "erpnext_ai_bots.api.openai_oauth.start_oauth",
@@ -219,7 +331,6 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             });
         });
 
-        // Complete: exchange code
         $flow.find(".ai-connect-complete-btn").on("click", () => {
             const pasted = $flow.find(".ai-connect-url-input").val().trim();
             if (!pasted) {
@@ -251,7 +362,6 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     if (data.success) {
                         frappe.show_alert({ message: __("ChatGPT account connected!"), indicator: "green" });
                         $flow.remove();
-                        // Retry the original message
                         if (pending_message) {
                             this.send(pending_message);
                         }
@@ -267,11 +377,12 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             });
         });
 
-        // Cancel
         $flow.find(".ai-connect-cancel-btn").on("click", () => {
             $flow.remove();
         });
     }
+
+    // ── Streaming ───────────────────────────────────────────────────
 
     _setup_stream() {
         this._cleanup_stream();
