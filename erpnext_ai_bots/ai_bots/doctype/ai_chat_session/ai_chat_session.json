@@ -11,6 +11,7 @@
   "company",
   "status",
   "title",
+  "category",
   "conversation_section",
   "messages_json",
   "message_count",
@@ -59,6 +60,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Title"
+  },
+  {
+   "default": "General",
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "General\nFinance\nSales\nStock\nHR"
   },
   {
    "fieldname": "conversation_section",
