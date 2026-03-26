@@ -7,6 +7,10 @@
  "field_order": [
   "deployment_section",
   "deployment_mode",
+  "license_key",
+  "license_status",
+  "license_last_validated",
+  "license_server_url",
   "ai_provider_section",
   "provider",
   "api_key",
@@ -42,12 +46,39 @@
    "label": "Deployment"
   },
   {
-   "default": "Community",
+   "default": "SaaS",
    "fieldname": "deployment_mode",
    "fieldtype": "Select",
    "label": "Deployment Mode",
-   "options": "Community",
-   "read_only": 1
+   "options": "SaaS\nEnterprise"
+  },
+  {
+   "fieldname": "license_key",
+   "fieldtype": "Password",
+   "label": "License Key",
+   "depends_on": "eval:doc.deployment_mode==='Enterprise'"
+  },
+  {
+   "fieldname": "license_status",
+   "fieldtype": "Select",
+   "label": "License Status",
+   "options": "\nActive\nExpired\nGrace Period\nInvalid",
+   "read_only": 1,
+   "depends_on": "eval:doc.deployment_mode==='Enterprise'"
+  },
+  {
+   "fieldname": "license_last_validated",
+   "fieldtype": "Datetime",
+   "label": "Last Validated",
+   "read_only": 1,
+   "depends_on": "eval:doc.deployment_mode==='Enterprise'"
+  },
+  {
+   "default": "https://license.benchi.io",
+   "fieldname": "license_server_url",
+   "fieldtype": "Data",
+   "label": "License Server URL",
+   "depends_on": "eval:doc.deployment_mode==='Enterprise'"
   },
   {
    "fieldname": "ai_provider_section",
@@ -63,7 +94,7 @@
    "options": "Anthropic\nOpenAI\nCustom"
   },
   {
-   "description": "Your Anthropic/OpenAI API key (BYOK)",
+  "description": "Platform-managed (SaaS) or your own key (Enterprise BYOK)",
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key"

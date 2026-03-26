@@ -1,7 +1,7 @@
 app_name = "erpnext_ai_bots"
 app_title = "ERPNext AI Bots"
 app_publisher = "Benchi"
-app_description = "AI Agent platform for ERPNext with streaming, subagents, and role-based tool access"
+app_description = "AI Agent platform for ERPNext — Commercial Edition (SaaS + Enterprise licensing)"
 app_version = "1.0.0"
 app_icon = "octicon octicon-hubot"
 app_color = "#6c5ce7"
@@ -23,9 +23,18 @@ has_permission = {
 
 # Scheduled tasks
 scheduler_events = {
+    "daily": [
+        "erpnext_ai_bots.licensing.manager.periodic_validation",
+    ],
     "daily_long": [
         "erpnext_ai_bots.utils.token_counter.cleanup_old_usage_records",
+        "erpnext_ai_bots.billing.metering.aggregate_daily_usage",
     ],
+    "cron": {
+        "0 0 1 * *": [
+            "erpnext_ai_bots.billing.metering.reset_monthly_counters",
+        ],
+    },
 }
 
 # Fixtures (default field whitelists shipped with the app)

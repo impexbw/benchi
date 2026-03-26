@@ -10,6 +10,7 @@ from erpnext_ai_bots.guards.permissions import PermissionGuard
 from erpnext_ai_bots.tools.sanitizer import InputSanitizer
 from erpnext_ai_bots.utils.token_counter import TokenTracker
 from erpnext_ai_bots.utils.prompt_defense import check_prompt_injection
+from erpnext_ai_bots.guards.cost_gate import CostGate
 
 
 class Orchestrator:
@@ -28,6 +29,7 @@ class Orchestrator:
         self.tool_registry = ToolRegistry(user=self.user, company=self.company)
         self.permission_guard = PermissionGuard(user=self.user)
         self.sanitizer = InputSanitizer()
+        self.cost_gate = CostGate(user=self.user, company=self.company)
         self.token_tracker = TokenTracker(session_id=self.session_id)
         self.stream_bridge = StreamBridge(session_id=self.session_id, user=self.user)
 
@@ -68,17 +70,20 @@ class Orchestrator:
         # 1. Prompt injection defense
         check_prompt_injection(user_message)
 
-        # 2. Append user message
+        # 2. Cost/license gate (commercial edition)
+        self.cost_gate.check_quota()
+
+        # 3. Append user message
         self.messages.append({
             "role": "user",
             "content": user_message,
             "timestamp": frappe.utils.now_datetime().isoformat(),
         })
 
-        # 3. Agent loop
+        # 4. Agent loop
         self._agent_loop()
 
-        # 4. Persist
+        # 5. Persist
         self._save_messages()
 
     def _agent_loop(self):

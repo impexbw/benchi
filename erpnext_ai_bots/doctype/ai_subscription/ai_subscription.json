@@ -1,0 +1,162 @@
+{
+ "actions": [],
+ "autoname": "AI-SUB-.#####",
+ "creation": "2026-03-26 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "company",
+  "tier",
+  "status",
+  "limits_section",
+  "monthly_conversation_limit",
+  "monthly_message_limit",
+  "monthly_token_limit",
+  "usage_section",
+  "period_start",
+  "period_end",
+  "conversations_used",
+  "messages_used",
+  "tokens_used",
+  "cost_accrued_usd",
+  "payment_section",
+  "stripe_customer_id",
+  "stripe_subscription_id",
+  "next_billing_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "tier",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Tier",
+   "options": "Free\nStarter\nProfessional\nEnterprise"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nPastDue\nCancelled\nTrial"
+  },
+  {
+   "fieldname": "limits_section",
+   "fieldtype": "Section Break",
+   "label": "Limits"
+  },
+  {
+   "fieldname": "monthly_conversation_limit",
+   "fieldtype": "Int",
+   "label": "Monthly Conversation Limit"
+  },
+  {
+   "fieldname": "monthly_message_limit",
+   "fieldtype": "Int",
+   "label": "Monthly Message Limit"
+  },
+  {
+   "fieldname": "monthly_token_limit",
+   "fieldtype": "Int",
+   "label": "Monthly Token Limit"
+  },
+  {
+   "fieldname": "usage_section",
+   "fieldtype": "Section Break",
+   "label": "Current Period Usage"
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Period Start"
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Date",
+   "label": "Period End"
+  },
+  {
+   "fieldname": "conversations_used",
+   "fieldtype": "Int",
+   "label": "Conversations Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "messages_used",
+   "fieldtype": "Int",
+   "label": "Messages Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tokens_used",
+   "fieldtype": "Int",
+   "label": "Tokens Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost_accrued_usd",
+   "fieldtype": "Currency",
+   "label": "Cost Accrued (USD)",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_section",
+   "fieldtype": "Section Break",
+   "label": "Payment"
+  },
+  {
+   "fieldname": "stripe_customer_id",
+   "fieldtype": "Data",
+   "label": "Stripe Customer ID"
+  },
+  {
+   "fieldname": "stripe_subscription_id",
+   "fieldtype": "Data",
+   "label": "Stripe Subscription ID"
+  },
+  {
+   "fieldname": "next_billing_date",
+   "fieldtype": "Date",
+   "label": "Next Billing Date"
+  }
+ ],
+ "issingle": 0,
+ "links": [],
+ "modified": "2026-03-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERPNext AI Bots",
+ "name": "AI Subscription",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

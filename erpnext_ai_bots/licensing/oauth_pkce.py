@@ -1,8 +1,9 @@
-"""OAuth 2.0 PKCE client for community branch.
+"""OAuth 2.0 PKCE client for commercial branch.
 
-In the community branch, OAuth PKCE is used for USER AUTHENTICATION
-against the customer's own Identity Provider (Keycloak, Auth0, etc.),
-NOT for license validation.
+In the commercial branch, OAuth PKCE is used for:
+- Enterprise: LICENSE VALIDATION against the Benchi license server
+- SaaS: Not used (session auth)
+- Can also be used for user auth against an external IdP
 """
 import frappe
 import hashlib

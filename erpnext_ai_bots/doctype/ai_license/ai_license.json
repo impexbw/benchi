@@ -1,0 +1,134 @@
+{
+ "actions": [],
+ "autoname": "",
+ "creation": "2026-03-26 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "license_key",
+  "license_type",
+  "activated_on",
+  "expires_on",
+  "max_users",
+  "features_json",
+  "site_url",
+  "company",
+  "oauth_section",
+  "oauth_state",
+  "oauth_code_verifier",
+  "last_validation",
+  "validation_status",
+  "grace_period_until"
+ ],
+ "fields": [
+  {
+   "fieldname": "license_key",
+   "fieldtype": "Data",
+   "label": "License Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "license_type",
+   "fieldtype": "Select",
+   "label": "License Type",
+   "options": "Enterprise\nCustom"
+  },
+  {
+   "fieldname": "activated_on",
+   "fieldtype": "Date",
+   "label": "Activated On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Date",
+   "label": "Expires On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "max_users",
+   "fieldtype": "Int",
+   "label": "Max Users",
+   "read_only": 1
+  },
+  {
+   "fieldname": "features_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Features"
+  },
+  {
+   "fieldname": "site_url",
+   "fieldtype": "Data",
+   "label": "Site URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "oauth_section",
+   "fieldtype": "Section Break",
+   "label": "OAuth State"
+  },
+  {
+   "fieldname": "oauth_state",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "OAuth State"
+  },
+  {
+   "fieldname": "oauth_code_verifier",
+   "fieldtype": "Password",
+   "hidden": 1,
+   "label": "Code Verifier"
+  },
+  {
+   "fieldname": "last_validation",
+   "fieldtype": "Datetime",
+   "label": "Last Validation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "validation_status",
+   "fieldtype": "Select",
+   "label": "Validation Status",
+   "options": "Valid\nExpired\nGracePeriod\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grace_period_until",
+   "fieldtype": "Datetime",
+   "label": "Grace Period Until",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-03-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERPNext AI Bots",
+ "name": "AI License",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 0
+}
