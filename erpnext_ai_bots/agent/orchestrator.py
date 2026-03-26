@@ -293,7 +293,10 @@ class Orchestrator:
 
         for fc in function_calls:
             self.turn_tool_calls += 1
-            tool_name = fc["name"]
+            openai_name = fc["name"]
+            # Convert OpenAI-safe name (underscores) back to dotted name
+            # e.g. core_get_list -> core.get_list
+            tool_name = openai_name.replace("_", ".", 1)
             call_id = fc["call_id"]
             start_time = time.time()
 

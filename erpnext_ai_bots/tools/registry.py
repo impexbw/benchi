@@ -81,29 +81,44 @@ class ToolRegistry:
         return schemas
 
     def get_openai_schemas(self) -> list:
-        """Return tool schemas for ALL registered tools in OpenAI function-calling format.
+        """Return tool schemas for ALL registered tools in OpenAI Responses API format.
 
         Anthropic format:
             {"name": "...", "description": "...", "input_schema": {"type": "object", ...}}
 
-        OpenAI format:
-            {"type": "function", "function": {"name": "...", "description": "...",
-                                              "parameters": {"type": "object", ...}}}
+        OpenAI Responses API format (NOT Chat Completions):
+            {"type": "function", "name": "...", "description": "...",
+             "parameters": {"type": "object", ...}}
+
+        Note: name, description, parameters are top-level siblings of type,
+        NOT nested inside a "function" key. The Responses API uses a flat structure.
+        Also: dots in names are replaced with underscores (API restriction).
         """
         schemas = []
         for namespaced_name in TOOL_MAP:
             tool = self.get_tool(namespaced_name)
             anthropic_schema = tool.schema()
+            # Responses API doesn't allow dots in function names
+            safe_name = anthropic_schema["name"].replace(".", "_")
             openai_schema = {
                 "type": "function",
-                "function": {
-                    "name": anthropic_schema["name"],
-                    "description": anthropic_schema["description"],
-                    "parameters": anthropic_schema["input_schema"],
-                },
+                "name": safe_name,
+                "description": anthropic_schema["description"],
+                "parameters": anthropic_schema["input_schema"],
             }
             schemas.append(openai_schema)
         return schemas
+
+    def get_tool_by_openai_name(self, openai_name: str):
+        """Look up a tool by its OpenAI-safe name (underscores instead of dots)."""
+        # Convert back: core_get_list -> core.get_list
+        dotted_name = openai_name.replace("_", ".", 1)
+        if dotted_name in TOOL_MAP:
+            return self.get_tool(dotted_name)
+        # Fallback: try direct match
+        if openai_name in TOOL_MAP:
+            return self.get_tool(openai_name)
+        raise ValueError(f"Unknown tool: {openai_name}")
 
     def resolve_tool_subset(self, patterns: list) -> list:
         """Resolve glob-like patterns to tool instances.
