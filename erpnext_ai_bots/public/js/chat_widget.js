@@ -597,16 +597,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.is_streaming = true;
         this.$panel.find(".ai-chat-send").prop("disabled", true);
 
-        // Create bot bubble with immediate "Thinking..." indicator
-        this.$current_message = this.add_message("assistant", "");
+        // Create a lightweight thinking indicator (not inside a message card)
         this.current_message_text = "";
         this._thinking_steps = [];
-        // Show thinking animation immediately so user sees activity
-        this.$current_message.html(
-            '<div class="ai-thinking-block">' +
-            '<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> Thinking...</div>' +
-            '</div>'
-        );
+        this.$thinking = $('<div class="ai-thinking-inline"><span class="ai-thinking-dot"></span> Thinking...</div>');
+        this.$messages.append(this.$thinking);
+        this._scroll_bottom();
+        // The real bot message bubble will be created when first text chunk arrives
+        this.$current_message = null;
 
         try {
             const result = await frappe.call({
@@ -618,7 +616,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             // Handle missing OpenAI token
             if (result.message.status === "no_token") {
                 this._finish_streaming();
-                this.$current_message.remove();
+                if (this.$current_message) this.$current_message.remove();
                 this._show_connect_flow(message);
                 return;
             }
@@ -637,17 +635,15 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 if (this.is_streaming) {
                     this._finish_streaming();
                     if (!this.current_message_text) {
-                        this.$current_message
-                            .addClass("ai-msg-error")
-                            .html('<span class="text-muted">No response received. The server may be busy — please try again.</span>');
+                        const $err = this.add_message("assistant", "No response received. The server may be busy — please try again.");
+                        $err.addClass("ai-msg-error");
                     }
                 }
             }, 120000);
         } catch (err) {
             this._finish_streaming();
-            this.$current_message
-                .addClass("ai-msg-error")
-                .html('<span class="text-danger">Something went wrong. Please try again.</span>');
+            const $err = this.add_message("assistant", "Something went wrong. Please try again.");
+            $err.addClass("ai-msg-error");
         }
     }
 
@@ -762,34 +758,34 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.session_id,
             {
                 onChunk: (text) => {
+                    // Create bot bubble on first chunk if it doesn't exist yet
+                    if (!this.$current_message) {
+                        // Remove inline thinking indicator
+                        if (this.$thinking) {
+                            this.$thinking.remove();
+                            this.$thinking = null;
+                        }
+                        this.$current_message = this.add_message("assistant", "");
+                    }
                     this.current_message_text += text;
-                    // Build the full HTML: thinking steps + response text
-                    let thinking_html = this._thinking_steps.length
-                        ? `<div class="ai-thinking-block">${this._thinking_steps.map(s =>
-                            `<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> ${s}</div>`
-                          ).join("")}</div>`
-                        : "";
                     this.$current_message.html(
-                        thinking_html + erpnext_ai_bots.render_markdown(this.current_message_text)
+                        erpnext_ai_bots.render_markdown(this.current_message_text)
                     );
                     this._scroll_bottom();
                 },
                 onToolStart: (tool) => {
                     this.$tool_indicator.show();
                     this.$tool_indicator.find(".ai-tool-name").text(`${tool}...`);
-                    // Add to thinking steps (skip duplicates)
+                    // Update the inline thinking indicator with tool steps
                     if (!this._thinking_steps.includes(tool)) {
                         this._thinking_steps.push(tool);
                     }
-                    if (this.$current_message) {
-                        let thinking_html = this._thinking_steps.map(s =>
-                            `<div class="ai-thinking-step"><span class="ai-thinking-dot"></span> ${s}...</div>`
-                        ).join("");
-                        let response_html = this.current_message_text
-                            ? erpnext_ai_bots.render_markdown(this.current_message_text)
-                            : "";
-                        this.$current_message.html(
-                            `<div class="ai-thinking-block">${thinking_html}</div>${response_html}`
+                    // Update inline thinking text
+                    if (this.$thinking) {
+                        this.$thinking.html(
+                            this._thinking_steps.map(s =>
+                                `<span class="ai-thinking-dot"></span> ${s}...`
+                            ).join("<br>")
                         );
                         this._scroll_bottom();
                     }
@@ -818,6 +814,11 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     _finish_streaming() {
         this.is_streaming = false;
+        // Remove inline thinking indicator
+        if (this.$thinking) {
+            this.$thinking.remove();
+            this.$thinking = null;
+        }
         // Cancel any pending tool-hide delay and hide immediately
         clearTimeout(this._tool_hide_timeout);
         this._tool_hide_timeout = null;

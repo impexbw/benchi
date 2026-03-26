@@ -559,6 +559,16 @@
     border-radius: 4px;
 }
 
+/* ── Inline thinking indicator (NOT inside a message card) ────────────── */
+.ai-thinking-inline {
+    align-self: flex-start;
+    padding: 6px 0;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--ai-accent, #6c5ce7);
+    line-height: 1.8;
+}
+
 /* ── Thinking block — accumulated steps shown above response ──────────── */
 .ai-thinking-block {
     padding-bottom: 4px;
