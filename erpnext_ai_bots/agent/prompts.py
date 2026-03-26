@@ -143,6 +143,10 @@ sales_get_customer_info
 sales_get_revenue_summary
   Use when: user asks about total sales, revenue for a period, top customers by
   spend, or average invoice value.
+  Supports filtering by territory (branch/location) and warehouse.
+  IMPORTANT: When a user asks about sales for a location or branch name
+  (e.g. "sales for Mogoditshane"), pass the location name as the territory
+  parameter. The tool does fuzzy matching on territory names.
 
 -- META TOOLS --
 meta_spawn_subagent

@@ -188,7 +188,7 @@
 }
 
 .ai-session-item:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--control-bg, #f1f5f9);
 }
 
 .ai-session-item.active {
@@ -209,7 +209,7 @@
 .ai-session-title {
     font-size: 13px;
     font-weight: 500;
-    color: #e2e8f0;
+    color: var(--text-color, #334155);
     line-height: 1.45;
     overflow: hidden;
     display: -webkit-box;
@@ -221,7 +221,7 @@
 }
 
 .ai-session-item.active .ai-session-title {
-    color: #fff;
+    color: var(--heading-color, #1e293b);
     font-weight: 600;
 }
 
@@ -229,7 +229,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--text-muted, #64748b);
 }
 
 /* Empty state */

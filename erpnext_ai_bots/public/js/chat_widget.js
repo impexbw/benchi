@@ -230,8 +230,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
         // Context menu actions
         this.$ctx_menu.find(".ai-ctx-rename").on("click", () => {
-            this._hide_ctx_menu();
             const sid = this._ctx_menu_target;
+            this._hide_ctx_menu();
             if (!sid) return;
             const session = this._all_sessions.find(s => s.name === sid);
             const current_title = session ? (session.title || sid) : sid;
@@ -242,8 +242,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         });
 
         this.$ctx_menu.find(".ai-ctx-delete").on("click", () => {
-            this._hide_ctx_menu();
             const sid = this._ctx_menu_target;
+            this._hide_ctx_menu();
             if (!sid) return;
             this._delete_session(sid);
         });

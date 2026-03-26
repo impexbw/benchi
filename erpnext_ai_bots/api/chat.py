@@ -181,10 +181,19 @@ def rename_session(session_id: str, title: str):
 
 @frappe.whitelist()
 def delete_session(session_id: str):
-    """Permanently delete a chat session."""
+    """Permanently delete a chat session and its linked audit logs."""
     session_user = frappe.db.get_value("AI Chat Session", session_id, "user")
     if session_user != frappe.session.user:
         frappe.throw(_("Access denied"), frappe.PermissionError)
+
+    # Delete linked AI Audit Log records first to avoid orphaned references
+    audit_logs = frappe.get_all(
+        "AI Audit Log",
+        filters={"session": session_id},
+        pluck="name",
+    )
+    for log_name in audit_logs:
+        frappe.delete_doc("AI Audit Log", log_name, ignore_permissions=True, force=True)
 
     frappe.delete_doc("AI Chat Session", session_id, ignore_permissions=True, force=True)
     frappe.db.commit()

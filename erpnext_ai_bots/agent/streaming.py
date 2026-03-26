@@ -16,10 +16,16 @@ class StreamBridge:
     def __init__(self, session_id: str, user: str):
         self.session_id = session_id
         self.user = user
+        self._tool_starts_sent = set()  # track tool IDs already announced
 
     def process_stream(self, stream):
         """Consume the Anthropic stream, forwarding text chunks to the client.
         Returns the final accumulated Message object.
+
+        Emits ai_tool_start with a friendly name during the stream so the
+        frontend can show thinking steps immediately. The tool name is
+        recorded in _tool_starts_sent so send_tool_start() will not
+        duplicate it after the stream finishes.
         """
         for event in stream:
             if not hasattr(event, "type"):
@@ -33,14 +39,23 @@ class StreamBridge:
             elif event.type == "content_block_start":
                 if hasattr(event.content_block, "type"):
                     if event.content_block.type == "tool_use":
+                        tool_name = event.content_block.name
+                        friendly = self._friendly_tool_name(tool_name, {})
+                        self._tool_starts_sent.add(tool_name)
                         self._publish("ai_tool_start", {
                             "session_id": self.session_id,
-                            "tool": event.content_block.name,
+                            "tool": friendly,
                         })
 
         return stream.get_final_message()
 
     def send_tool_start(self, tool_name: str, tool_input: dict):
+        # Skip if already announced during Anthropic stream processing.
+        # For the OpenAI path, _tool_starts_sent is always empty so this
+        # always fires.
+        if tool_name in self._tool_starts_sent:
+            self._tool_starts_sent.discard(tool_name)
+            return
         self._publish("ai_tool_start", {
             "session_id": self.session_id,
             "tool": self._friendly_tool_name(tool_name, tool_input),
