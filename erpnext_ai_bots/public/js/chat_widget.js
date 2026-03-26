@@ -402,6 +402,12 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     this.$tool_indicator.find(".ai-tool-name").text(
                         `${tool}...`
                     );
+                    // Show thinking inline in the chat bubble
+                    if (this.$current_message && !this.current_message_text) {
+                        this.$current_message.html(
+                            `<span class="ai-thinking"><span class="ai-thinking-dot"></span> ${tool}...</span>`
+                        );
+                    }
                 },
                 onToolResult: () => {
                     this.$tool_indicator.hide();

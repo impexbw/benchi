@@ -309,20 +309,31 @@ class CodexClient:
 
             # ── Function call argument streaming ─────────────────────────
             elif event_type == "response.function_call_arguments.delta":
-                call_id = chunk.get("call_id", "")
+                # The call_id may be at chunk level or nested in item
+                call_id = chunk.get("call_id", "") or chunk.get("item_id", "")
                 delta = chunk.get("delta", "")
                 if call_id in _pending_calls:
                     _pending_calls[call_id]["args_buf"] += delta
+                elif _pending_calls:
+                    # Fallback: if call_id doesn't match, use output_index
+                    # to find the right pending call, or just use the first one
+                    output_index = chunk.get("output_index", None)
+                    for pid, pdata in _pending_calls.items():
+                        pdata["args_buf"] += delta
+                        break
 
             # ── Function call arguments complete ─────────────────────────
             elif event_type == "response.function_call_arguments.done":
-                call_id = chunk.get("call_id", "")
-                # The "arguments" field on this event is the canonical final value;
-                # fall back to the accumulated buffer if it is absent.
+                call_id = chunk.get("call_id", "") or chunk.get("item_id", "")
                 final_args = chunk.get("arguments", "")
                 if call_id in _pending_calls:
                     if final_args:
                         _pending_calls[call_id]["args_buf"] = final_args
+                elif _pending_calls and final_args:
+                    # Fallback: assign to first pending call
+                    for pid, pdata in _pending_calls.items():
+                        pdata["args_buf"] = final_args
+                        break
 
             # ── Output item fully done ────────────────────────────────────
             elif event_type == "response.output_item.done":
@@ -332,11 +343,21 @@ class CodexClient:
                     call_id = item.get("call_id", "")
                     pending = _pending_calls.pop(call_id, None)
                     if pending:
+                        # Use item's arguments field if our buffer is empty
+                        args = pending["args_buf"] or item.get("arguments", "{}")
                         function_calls.append({
-                            "id": pending["id"],
+                            "id": pending["id"] or item.get("id", ""),
                             "call_id": call_id,
-                            "name": pending["name"],
-                            "arguments": pending["args_buf"],
+                            "name": pending["name"] or item.get("name", ""),
+                            "arguments": args,
+                        })
+                    else:
+                        # No pending entry — extract directly from the done item
+                        function_calls.append({
+                            "id": item.get("id", ""),
+                            "call_id": call_id,
+                            "name": item.get("name", ""),
+                            "arguments": item.get("arguments", "{}"),
                         })
 
             # ── Response complete ─────────────────────────────────────────
