@@ -38,6 +38,7 @@ TOOL_PERMISSION_MAP = {
     "sales.get_revenue_summary": ("read", "Sales Invoice"),
 
     "meta.spawn_subagent": (None, None),
+    "meta.schedule_task": (None, None),  # Meta tool, no DocType permission
 }
 
 

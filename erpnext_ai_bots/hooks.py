@@ -27,6 +27,11 @@ has_permission = {
 
 # Scheduled tasks
 scheduler_events = {
+    "cron": {
+        "*/15 * * * *": [
+            "erpnext_ai_bots.utils.task_runner.run_scheduled_tasks",
+        ],
+    },
     "daily_long": [
         "erpnext_ai_bots.utils.token_counter.cleanup_old_usage_records",
     ],

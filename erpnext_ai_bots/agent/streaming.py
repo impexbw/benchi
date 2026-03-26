@@ -105,6 +105,7 @@ class StreamBridge:
             "core.raw_sql": "Running database query",
             "core.frappe_api": "Querying ERPNext data",
             "meta.spawn_subagent": "Working on complex task",
+            "meta.schedule_task": "Setting up scheduled task",
         }
         return friendly.get(tool_name, f"Looking up {tool_name.split('.')[-1].replace('_', ' ')}")
 

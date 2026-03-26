@@ -45,6 +45,7 @@ TOOL_MAP = {
 
     # Meta tools
     "meta.spawn_subagent": "erpnext_ai_bots.tools.meta.spawn_subagent.SpawnSubagentTool",
+    "meta.schedule_task": "erpnext_ai_bots.tools.meta.schedule_task.ScheduleTaskTool",
 }
 
 

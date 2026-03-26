@@ -166,6 +166,25 @@ core_frappe_api
   Supports like, between, in operators. Can do GROUP BY and aggregates.
   Pass filters as a dict or as a list of [field, operator, value] triples.
 
+-- SCHEDULING TOOLS --
+meta_schedule_task
+  Use when: user asks to be reminded about something, wants a recurring report,
+  or needs follow-up on a document at a later date.
+  Examples:
+  - "Remind me to check on that quotation in 3 days" → create Once task
+  - "Send me a sales summary every Monday" → create Weekly task
+  - "Check overdue invoices daily at 8am" → create Daily task
+  - "Email me stock levels on the 1st of each month" → create Monthly task
+  - "Show my scheduled tasks" → list action
+  - "Cancel the Monday sales reminder" → cancel action (requires task_name)
+  - "Pause the daily invoice check" → pause action (requires task_name)
+  The prompt field must be a self-contained instruction the AI can execute
+  independently with no conversation context, as if the user typed it fresh.
+  Good: "Generate a sales summary for the past 7 days including top customers
+        and total revenue. Present results in a markdown table."
+  Bad:  "Follow up on that thing we discussed."
+  Always confirm the schedule details with the user before calling create.
+
 -- META TOOLS --
 meta_spawn_subagent
   Use when: the user's request requires executing a complex multi-step workflow
