@@ -232,6 +232,50 @@
     color: var(--text-muted, #64748b);
 }
 
+/* Hover action buttons on session items */
+.ai-session-actions {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    gap: 2px;
+}
+
+.ai-session-item {
+    position: relative;
+}
+
+.ai-session-item:hover .ai-session-actions {
+    display: flex;
+}
+
+.ai-session-act-pin,
+.ai-session-act-del {
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-muted, #94a3b8);
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+.ai-session-act-pin:hover {
+    background: rgba(108, 92, 231, 0.2);
+    color: var(--ai-accent, #6c5ce7);
+}
+
+.ai-session-act-del:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
 /* Empty state */
 .ai-sidebar-empty {
     text-align: center;

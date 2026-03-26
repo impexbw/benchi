@@ -339,7 +339,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.is_open = !this.is_open;
         this.$panel.toggle(this.is_open);
         this.$btn.toggleClass("ai-chat-btn-active", this.is_open);
-        if (this.is_open) this.$input.focus();
+        if (this.is_open) {
+            this.$input.focus();
+            setTimeout(() => this._scroll_bottom(), 50);
+        }
     }
 
     toggle_expand() {
@@ -518,6 +521,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                    </span>`
                 : "";
 
+            const pin_btn_label = s.pinned ? "Unpin" : "Pin";
             const $item = $(`
                 <div class="ai-session-item${is_active}" data-sid="${s.name}" title="${frappe.utils.escape_html(s.title || s.name)}">
                     <div class="ai-session-item-top">
@@ -528,16 +532,25 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                         <span class="ai-session-date">${date}</span>
                         <span class="ai-session-count">${count} msg${count !== 1 ? "s" : ""}</span>
                     </div>
+                    <div class="ai-session-actions">
+                        <button class="ai-session-act-pin" title="${pin_btn_label}">${s.pinned ? "📌" : "📌"}</button>
+                        <button class="ai-session-act-del" title="Delete">✕</button>
+                    </div>
                 </div>
             `);
 
-            $item.on("click", () => {
-                this._load_session(s.name);
+            $item.find(".ai-session-act-pin").on("click", (e) => {
+                e.stopPropagation();
+                this._toggle_pin_session(s.name);
             });
 
-            $item.on("contextmenu", (e) => {
-                e.preventDefault();
-                this._show_ctx_menu(e.pageX, e.pageY, s.name);
+            $item.find(".ai-session-act-del").on("click", (e) => {
+                e.stopPropagation();
+                this._delete_session(s.name);
+            });
+
+            $item.on("click", () => {
+                this._load_session(s.name);
             });
 
             this.$session_list.append($item);
