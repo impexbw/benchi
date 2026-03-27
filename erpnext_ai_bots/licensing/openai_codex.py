@@ -21,7 +21,12 @@ DEFAULT_CODEX_MODEL = "gpt-5.1-codex-mini"
 
 
 class CodexClient:
-    """Client for calling ChatGPT Codex API on behalf of a Frappe user."""
+    """Client for calling ChatGPT Codex API using the global shared OAuth token.
+
+    The OAuth token is connected once by an admin and shared by all users.
+    ERPNext user permissions are enforced at the tool execution layer,
+    not at the API token level.
+    """
 
     def __init__(self, user: str = None):
         self.user = user or frappe.session.user
@@ -30,11 +35,19 @@ class CodexClient:
     @property
     def token_doc(self):
         if not self._token_doc:
-            if not frappe.db.exists("AI OpenAI Token", self.user):
+            # Find any connected token (global shared connection)
+            tokens = frappe.get_all(
+                "AI OpenAI Token",
+                filters={"status": "Connected"},
+                fields=["name"],
+                limit_page_length=1,
+                order_by="modified desc",
+            )
+            if not tokens:
                 frappe.throw(
-                    _("No OpenAI connection found. Connect your ChatGPT account first.")
+                    _("No OpenAI connection found. Ask your admin to connect a ChatGPT account.")
                 )
-            self._token_doc = frappe.get_doc("AI OpenAI Token", self.user)
+            self._token_doc = frappe.get_doc("AI OpenAI Token", tokens[0]["name"])
         return self._token_doc
 
     def _ensure_valid_token(self):

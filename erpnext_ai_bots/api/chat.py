@@ -44,12 +44,15 @@ def _auto_categorize(text: str) -> str:
     return best_cat if scores[best_cat] > 0 else "General"
 
 
-def _user_has_openai_token(user: str) -> bool:
-    """Check if the user has an active OpenAI OAuth token."""
-    if not frappe.db.exists("AI OpenAI Token", user):
-        return False
-    status = frappe.db.get_value("AI OpenAI Token", user, "status")
-    return status == "Connected"
+def _has_openai_token() -> bool:
+    """Check if ANY active OpenAI OAuth token exists (global shared connection)."""
+    tokens = frappe.get_all(
+        "AI OpenAI Token",
+        filters={"status": "Connected"},
+        limit_page_length=1,
+        pluck="name",
+    )
+    return len(tokens) > 0
 
 
 @frappe.whitelist()
@@ -68,7 +71,7 @@ def send_message(message: str, session_id: str = None):
     # Check if provider requires OpenAI token
     settings = frappe.get_cached_doc("AI Bot Settings")
     provider = settings.provider or "Anthropic"
-    if provider == "OpenAI (ChatGPT OAuth)" and not _user_has_openai_token(user):
+    if provider == "OpenAI (ChatGPT OAuth)" and not _has_openai_token():
         return {
             "status": "no_token",
             "message": _("Please connect your ChatGPT account to use the AI Assistant."),
