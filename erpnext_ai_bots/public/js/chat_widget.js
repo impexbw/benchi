@@ -80,15 +80,40 @@ erpnext_ai_bots.render_markdown = function (text) {
         return cards;
     });
 
-    // Fourth pass: convert ERPNext document IDs (e.g. SI-2026-00001,
-    // SAL-QTN-2026-00264) into clickable links that open the record.
-    // The pattern requires a known prefix, at least one separator segment,
-    // and ends with 3+ digit run so plain words are never matched.
+    // Fourth pass: convert ERPNext document IDs into clickable links.
+    // Maps document prefixes to their ERPNext URL route slugs.
+    var _doctype_slugs = {
+        "SAL-QTN": "quotation",
+        "SI": "sales-invoice", "SINV": "sales-invoice",
+        "PI": "purchase-invoice", "PINV": "purchase-invoice",
+        "SO": "sales-order",
+        "PO": "purchase-order",
+        "DN": "delivery-note",
+        "PR": "purchase-receipt",
+        "JE": "journal-entry",
+        "SE": "stock-entry",
+        "PE": "payment-entry",
+        "LC": "landed-cost-voucher",
+        "QTN": "quotation",
+        "ORD": "sales-order",
+        "AI-CHAT": "ai-chat-session",
+        "AI-TASK": "ai-scheduled-task",
+    };
+
     html = html.replace(
-        /\b((?:SI|PI|SAL-QTN|PO|SO|DN|PR|JE|SE|LC|PE|SINV|PINV|QTN|ORD|IBMOL2?-\w+-\d+-\d+|LTH-\w+-\d+|IBKAN-\w+-\d+|IBTLK-\w+-\d+|AI-CHAT)-[\w-]+\d{3,})\b/g,
+        /\b((?:SAL-QTN|SI|PI|PO|SO|DN|PR|JE|SE|LC|PE|SINV|PINV|QTN|ORD|AI-CHAT|AI-TASK|IBMOL2?-\w+-\d+-\d+|LTH-\w+-\d+|IBKAN-\w+-\d+|IBTLK-\w+-\d+)-[\w-]*\d{3,})\b/g,
         function (match) {
+            // Find the matching slug by checking prefixes (longest first)
+            var slug = "";
+            var prefixes = Object.keys(_doctype_slugs).sort(function(a, b) { return b.length - a.length; });
+            for (var i = 0; i < prefixes.length; i++) {
+                if (match.startsWith(prefixes[i])) {
+                    slug = _doctype_slugs[prefixes[i]] + "/";
+                    break;
+                }
+            }
             return (
-                '<a href="/app/' + encodeURIComponent(match) +
+                '<a href="/app/' + slug + encodeURIComponent(match) +
                 '" class="ai-doc-link" target="_blank">' + match + "</a>"
             );
         }
