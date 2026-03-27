@@ -49,36 +49,8 @@ erpnext_ai_bots.render_markdown = function (text) {
         }
     );
 
-    // Third pass: detect 2-column "Metric/Field/Property/Detail" tables and
-    // render them as styled metric cards instead of a plain HTML table.
-    html = html.replace(/<table>([\s\S]*?)<\/table>/g, function (match, inner) {
-        // Extract header cells — only proceed when there are exactly 2 columns
-        const headers = inner.match(/<th>(.*?)<\/th>/g);
-        if (!headers || headers.length !== 2) return match;
-
-        const first_header = headers[0].replace(/<\/?th>/g, "").trim().toLowerCase();
-        const metric_headers = ["metric", "field", "property", "detail"];
-        if (!metric_headers.includes(first_header)) return match;
-
-        // Pull every data row that has exactly 2 <td> cells
-        const rows = inner.match(/<tr><td>(.*?)<\/td><td>(.*?)<\/td><\/tr>/g);
-        if (!rows || !rows.length) return match;
-
-        let cards = '<div class="ai-metric-grid">';
-        rows.forEach(function (row) {
-            const cells = row.match(/<td>(.*?)<\/td>/g);
-            if (!cells || cells.length < 2) return;
-            const label = cells[0].replace(/<\/?td>/g, "");
-            const value = cells[1].replace(/<\/?td>/g, "");
-            cards +=
-                '<div class="ai-metric-card">' +
-                    '<div class="ai-metric-value">' + value + "</div>" +
-                    '<div class="ai-metric-label">' + label + "</div>" +
-                "</div>";
-        });
-        cards += "</div>";
-        return cards;
-    });
+    // Third pass: metric cards DISABLED — tables are cleaner for ERPNext data.
+    // All data renders as professional tables with styled headers.
 
     // Fourth pass: convert ERPNext document IDs into clickable links.
     // Maps document prefixes to their ERPNext URL route slugs.

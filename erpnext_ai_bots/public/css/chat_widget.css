@@ -710,37 +710,6 @@
     }
 }
 
-/* ── Metric cards ────────────────────────────────────────────────────────── */
-/* Rendered in place of a 2-column Metric/Field/Property/Detail table.       */
-.ai-metric-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 8px;
-    margin: 8px 0;
-}
-
-.ai-metric-card {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    padding: 12px;
-    text-align: center;
-}
-
-.ai-metric-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--ai-accent, #6c5ce7);
-    margin-bottom: 4px;
-}
-
-.ai-metric-label {
-    font-size: 11px;
-    color: var(--text-muted, #94a3b8);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
 /* ── Document reference links ────────────────────────────────────────────── */
 /* Auto-linked ERPNext document IDs (e.g. SI-2026-00001).                    */
 .ai-doc-link {
