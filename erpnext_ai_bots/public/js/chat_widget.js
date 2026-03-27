@@ -418,6 +418,11 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     async _load_session(session_id) {
+        // Reset streaming state in case a previous session was mid-stream
+        this.is_streaming = false;
+        this.$panel.find(".ai-chat-send").prop("disabled", false);
+        this._cleanup_stream();
+
         try {
             const r = await frappe.call({
                 method: "erpnext_ai_bots.api.chat.get_history",
