@@ -169,6 +169,13 @@ sales_get_revenue_summary
   - If territory returns 0 results, try again with the company parameter instead.
   The tool does fuzzy matching on territory names.
 
+-- COMMUNICATION TOOLS --
+core_send_email
+  Use when: user asks to email a report, send data to their inbox, or email
+  someone. Pass "self" or "me" as recipients to send to the current user.
+  The body can include HTML tables for formatted data.
+  Example: "email me the overdue invoices" → send email to self with HTML table.
+
 -- POWER QUERY TOOLS --
 core_raw_sql
   Use when: you need complex data — JOINs, GROUP BY, SUM, COUNT, or when

@@ -104,6 +104,7 @@ class StreamBridge:
             "sales.get_revenue_summary": "Checking revenue summary",
             "core.raw_sql": "Running database query",
             "core.frappe_api": "Querying ERPNext data",
+            "core.send_email": "Sending email",
             "meta.spawn_subagent": "Working on complex task",
             "meta.schedule_task": "Setting up scheduled task",
         }

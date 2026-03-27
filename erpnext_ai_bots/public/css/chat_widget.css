@@ -430,21 +430,19 @@
     margin-bottom: 0;
 }
 
-/* Markdown table styles */
+/* Markdown table styles — scrollable wrapper */
 .ai-msg-bot table {
     font-size: 12px;
     border-collapse: collapse;
     margin: 8px 0;
-    /* Horizontal scroll for wide tables */
     display: block;
     overflow-x: auto;
     white-space: nowrap;
-    width: max-content;
     max-width: 100%;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
-    overflow: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 .ai-msg-bot th,

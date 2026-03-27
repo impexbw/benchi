@@ -11,6 +11,7 @@ TOOL_PERMISSION_MAP = {
     "core.run_report": ("read", None),
     "core.raw_sql": (None, None),   # SQL queries use DB-level auth, not DocType permissions
     "core.frappe_api": ("read", None),
+    "core.send_email": (None, None),
 
     "accounting.get_trial_balance": ("read", "Account"),
     "accounting.get_outstanding_invoices": ("read", "Sales Invoice"),
