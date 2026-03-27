@@ -415,10 +415,38 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     async _load_session(session_id) {
-        // Reset streaming state in case a previous session was mid-stream
-        this.is_streaming = false;
-        this.$panel.find(".ai-chat-send").prop("disabled", false);
-        this._cleanup_stream();
+        // If currently streaming a DIFFERENT session, let it finish in background
+        if (this.is_streaming && this.session_id && this.session_id !== session_id) {
+            // Keep the stream handler alive — it will update the DB when done
+            // Just detach it from the current UI
+            const old_sid = this.session_id;
+            const old_handler = this.stream_handler;
+            this.stream_handler = null;
+            this.is_streaming = false;
+            this.$panel.find(".ai-chat-send").prop("disabled", false);
+            if (this.$thinking) { this.$thinking.remove(); this.$thinking = null; }
+
+            // When the old session finishes, show a notification and refresh sidebar
+            if (old_handler) {
+                // Replace callbacks to just notify
+                frappe.realtime.on("ai_done", (data) => {
+                    if (data.session_id === old_sid) {
+                        frappe.show_alert({ message: __("AI finished processing in background"), indicator: "blue" });
+                        if (this.is_expanded) this._load_sessions_list();
+                        // Clean up this one-time listener
+                        frappe.realtime.off("ai_done", arguments.callee);
+                        old_handler.destroy();
+                    }
+                });
+            }
+        } else {
+            // Same session or not streaming — normal reset
+            this.is_streaming = false;
+            this.$panel.find(".ai-chat-send").prop("disabled", false);
+            this._cleanup_stream();
+        }
+
+        if (this.$thinking) { this.$thinking.remove(); this.$thinking = null; }
 
         try {
             const r = await frappe.call({
