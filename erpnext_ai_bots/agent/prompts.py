@@ -6,7 +6,14 @@ def get_system_prompt(user: str, company: str) -> str:
     """Build the orchestrator system prompt with live company context injected."""
     user_doc = frappe.get_cached_doc("User", user)
     user_roles = frappe.get_roles(user)
+    from datetime import timedelta
+    now = frappe.utils.now_datetime()
     today = frappe.utils.today()
+    current_time = now.strftime("%H:%M:%S")
+    current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
+    day_of_week = now.strftime("%A")
+    in_5_min = (now + timedelta(minutes=5)).strftime("%H:%M")
+    tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
     # Build the live snapshot. Failures inside are caught per-section.
     try:
@@ -25,7 +32,18 @@ access to all company data.
 WHO YOU ARE TALKING TO:
 - Name: {user_doc.full_name}
 - Roles: {', '.join(user_roles)}
-- Today: {today}
+- Date: {today} ({day_of_week})
+- Time: {current_time}
+- DateTime: {current_datetime}
+
+IMPORTANT — TIME AWARENESS:
+You know the exact current date and time. When the user says relative times:
+- "in 5 minutes" → trigger_time = {in_5_min}, trigger_date = {today}
+- "in 2 hours" → calculate trigger_time from current time {current_time}
+- "tomorrow" → trigger_date = {tomorrow}
+- "next Monday" → calculate the exact date of next Monday from {today}
+Always convert relative times to absolute trigger_date (YYYY-MM-DD) and
+trigger_time (HH:MM) when creating scheduled tasks.
 
 === LIVE CONTEXT ===
 {context_block}
