@@ -50,23 +50,31 @@ class TokenTracker:
         self.total_output += output_tokens
         self.total_cost += cost
 
-        session = frappe.get_cached_doc("AI Chat Session", self.session_id)
+        # Token tracking is best-effort — never crash the orchestrator
+        try:
+            if not frappe.db.exists("AI Chat Session", self.session_id):
+                return
 
-        frappe.get_doc({
-            "doctype": "AI Usage Record",
-            "session": self.session_id,
-            "user": session.user,
-            "company": session.company,
-            "timestamp": frappe.utils.now_datetime(),
-            "model": model,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cache_creation_tokens": cache_creation_tokens,
-            "cache_read_tokens": cache_read_tokens,
-            "cost_usd": cost,
-            "is_subagent": is_subagent,
-            "request_type": "Subagent" if is_subagent else "Chat",
-        }).insert(ignore_permissions=True)
+            session = frappe.get_cached_doc("AI Chat Session", self.session_id)
+
+            frappe.get_doc({
+                "doctype": "AI Usage Record",
+                "session": self.session_id,
+                "user": session.user,
+                "company": session.company,
+                "timestamp": frappe.utils.now_datetime(),
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_creation_tokens": cache_creation_tokens,
+                "cache_read_tokens": cache_read_tokens,
+                "cost_usd": cost,
+                "is_subagent": is_subagent,
+                "request_type": "Subagent" if is_subagent else "Chat",
+            }).insert(ignore_permissions=True)
+        except Exception:
+            # Log but don't crash — the AI response is more important
+            frappe.log_error(title="Token tracking failed", message=frappe.get_traceback())
         frappe.db.commit()
 
 
