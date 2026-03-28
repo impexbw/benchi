@@ -122,10 +122,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._ctx_menu_target = null;    // session id under context menu
         this._last_message = null;       // last sent message text, for retry
         this._loading_session = false;   // guard against concurrent _load_session calls
+        this._search_query = "";         // sidebar session search filter
+        this._current_company = null;    // active company context
+        this._all_companies = [];        // cached companies list
         this.render();
         this.bind_events();
         this._load_last_session();
         this._load_accent_color();
+        this._load_companies();
     }
 
     // ── Accent color ─────────────────────────────────────────────────
@@ -146,6 +150,62 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         }
     }
 
+    // ── Company selector ────────────────────────────────────────────
+
+    async _load_companies() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.get_companies",
+                async: true,
+            });
+            this._all_companies = r.message || [];
+            // Set default company from Frappe user defaults
+            const default_co = frappe.defaults.get_default("company");
+            if (!this._current_company && this._all_companies.length) {
+                const found = this._all_companies.find(c => c.name === default_co);
+                this._current_company = found ? found.name : this._all_companies[0].name;
+            }
+            this._render_company_badge();
+        } catch (e) {
+            // Silently fail — company context falls back to server-side default
+        }
+    }
+
+    _render_company_badge() {
+        const label = this._current_company || "...";
+        this.$company_badge.text(label);
+        this._render_company_dropdown();
+    }
+
+    _render_company_dropdown() {
+        this.$company_dropdown.empty();
+        for (const co of this._all_companies) {
+            const is_active = co.name === this._current_company;
+            const $opt = $(
+                `<div class="ai-company-option${is_active ? " active" : ""}"
+                      data-name="${frappe.utils.escape_html(co.name)}">
+                    ${frappe.utils.escape_html(co.company_name || co.name)}
+                </div>`
+            );
+            $opt.on("click", () => {
+                this.$company_dropdown.hide();
+                if (co.name === this._current_company) return;
+                const old = this._current_company;
+                this._current_company = co.name;
+                this._render_company_badge();
+                // System message so the user sees the switch in context
+                const $sys = $(
+                    `<div class="ai-msg ai-msg-bot ai-msg-system-note">
+                        Switched to <strong>${frappe.utils.escape_html(co.company_name || co.name)}</strong>
+                    </div>`
+                );
+                this.$messages.append($sys);
+                this._scroll_bottom();
+            });
+            this.$company_dropdown.append($opt);
+        }
+    }
+
     // ── DOM ─────────────────────────────────────────────────────────
 
     render() {
@@ -161,13 +221,27 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel = $(`
             <div class="ai-chat-panel" style="display:none">
                 <div class="ai-chat-header">
-                    <span class="ai-chat-title">AI Assistant</span>
+                    <div class="ai-chat-header-left">
+                        <span class="ai-chat-title">AI Assistant</span>
+                        <div class="ai-company-selector" style="position:relative;display:inline-block">
+                            <span class="ai-company-badge" title="Click to switch company">...</span>
+                            <div class="ai-company-dropdown"></div>
+                        </div>
+                    </div>
                     <div class="ai-chat-header-actions">
                         <button class="ai-chat-new-session btn btn-xs" title="New conversation">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                                  stroke="currentColor" stroke-width="2">
                                 <line x1="12" y1="5" x2="12" y2="19"/>
                                 <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </button>
+                        <button class="ai-chat-export btn btn-xs" title="Export conversation">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
                             </svg>
                         </button>
                         <button class="ai-chat-expand btn btn-xs" title="Expand">
@@ -209,6 +283,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                                 New Chat
                             </button>
                         </div>
+                        <div class="ai-sidebar-search-wrap">
+                            <input type="text" class="ai-sidebar-search form-control form-control-sm"
+                                   placeholder="Search conversations..." />
+                        </div>
                         <div class="ai-sidebar-category-tabs">
                             ${erpnext_ai_bots.CATEGORIES.map(c =>
                                 `<button class="ai-cat-tab${c === "All" ? " active" : ""}" data-cat="${c}">${c}</button>`
@@ -219,7 +297,34 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
                     <!-- Chat area -->
                     <div class="ai-chat-main">
-                        <div class="ai-chat-messages"></div>
+                        <div class="ai-chat-messages">
+                            <div class="ai-templates-grid">
+                                <div class="ai-template-card" data-prompt="Show me today's sales summary">
+                                    <span class="ai-template-icon">📊</span>
+                                    <span class="ai-template-text">Today's Sales</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="List all overdue invoices">
+                                    <span class="ai-template-icon">⚠️</span>
+                                    <span class="ai-template-text">Overdue Invoices</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="What is our current stock level for low-stock items?">
+                                    <span class="ai-template-icon">📦</span>
+                                    <span class="ai-template-text">Low Stock Alert</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="Show me the top 10 customers by revenue this month">
+                                    <span class="ai-template-icon">👥</span>
+                                    <span class="ai-template-text">Top Customers</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="What is our bank balance across all accounts?">
+                                    <span class="ai-template-icon">🏦</span>
+                                    <span class="ai-template-text">Bank Balances</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="Create a quotation">
+                                    <span class="ai-template-icon">📝</span>
+                                    <span class="ai-template-text">New Quotation</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="ai-chat-tool-indicator" style="display:none">
                             <div class="ai-tool-spinner"></div>
                             <span class="ai-tool-name"></span>
@@ -250,11 +355,21 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             </div>
         `).appendTo("body");
 
-        this.$messages       = this.$panel.find(".ai-chat-messages");
-        this.$input          = this.$panel.find(".ai-chat-input");
-        this.$tool_indicator = this.$panel.find(".ai-chat-tool-indicator");
-        this.$sidebar        = this.$panel.find(".ai-chat-sidebar");
-        this.$session_list   = this.$panel.find(".ai-sidebar-session-list");
+        // Export dropdown (shared, appended to body)
+        this.$export_menu = $(`
+            <div class="ai-export-menu" style="display:none">
+                <button class="ai-export-html">Export as HTML (Print / PDF)</button>
+                <button class="ai-export-csv">Export as CSV</button>
+            </div>
+        `).appendTo("body");
+
+        this.$messages         = this.$panel.find(".ai-chat-messages");
+        this.$input            = this.$panel.find(".ai-chat-input");
+        this.$tool_indicator   = this.$panel.find(".ai-chat-tool-indicator");
+        this.$sidebar          = this.$panel.find(".ai-chat-sidebar");
+        this.$session_list     = this.$panel.find(".ai-sidebar-session-list");
+        this.$company_badge    = this.$panel.find(".ai-company-badge");
+        this.$company_dropdown = this.$panel.find(".ai-company-dropdown");
     }
 
     // ── Events ──────────────────────────────────────────────────────
@@ -330,6 +445,68 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 this._hide_ctx_menu();
             }
         });
+
+        // Export button — toggles dropdown below the button
+        this.$panel.find(".ai-chat-export").on("click", (e) => {
+            e.stopPropagation();
+            if (this.$export_menu.is(":visible")) {
+                this.$export_menu.hide();
+                return;
+            }
+            const btn_rect = e.currentTarget.getBoundingClientRect();
+            const menu_w = 210;
+            const left = Math.min(btn_rect.left, window.innerWidth - menu_w - 8);
+            const top  = btn_rect.bottom + 4;
+            this.$export_menu.css({ left: left, top: top }).show();
+        });
+
+        // Export menu actions
+        this.$export_menu.find(".ai-export-html").on("click", () => {
+            this.$export_menu.hide();
+            this._export_html();
+        });
+
+        this.$export_menu.find(".ai-export-csv").on("click", () => {
+            this.$export_menu.hide();
+            this._export_csv();
+        });
+
+        // Close export menu on outside click
+        $(document).on("mousedown.ai_export", (e) => {
+            if (
+                !$(e.target).closest(".ai-export-menu").length &&
+                !$(e.target).closest(".ai-chat-export").length
+            ) {
+                this.$export_menu.hide();
+            }
+        });
+
+        // Sidebar search — instant client-side filtering
+        this.$panel.on("input", ".ai-sidebar-search", (e) => {
+            this._search_query = e.target.value.trim().toLowerCase();
+            this._render_sidebar_sessions();
+        });
+
+        // Company badge — toggle dropdown
+        this.$company_badge.on("click", (e) => {
+            e.stopPropagation();
+            const is_visible = this.$company_dropdown.is(":visible");
+            this.$company_dropdown.toggle(!is_visible);
+        });
+
+        // Close company dropdown on outside click
+        $(document).on("mousedown.ai_company", (e) => {
+            if (!$(e.target).closest(".ai-company-selector").length) {
+                this.$company_dropdown.hide();
+            }
+        });
+
+        // Template cards — insert prompt and send
+        this.$messages.on("click", ".ai-template-card", (e) => {
+            const prompt = $(e.currentTarget).data("prompt");
+            this.$input.val(prompt);
+            this.send();
+        });
     }
 
     // ── Panel open/close ─────────────────────────────────────────────
@@ -376,6 +553,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel.find(".ai-chat-session-select").val("");
         // Highlight no item in sidebar
         this.$session_list.find(".ai-session-item").removeClass("active");
+        // Show quick-action templates for the fresh empty state
+        this._show_templates();
     }
 
     // ── Message rendering ────────────────────────────────────────────
@@ -449,7 +628,15 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.$messages.empty();
 
             const messages = data.messages || [];
-            for (const msg of messages) {
+            const visible_messages = messages.filter(
+                m => m.role !== "system" && (
+                    typeof m.content === "string"
+                        ? m.content
+                        : (Array.isArray(m.content) && m.content.some(b => b.type === "text" && b.text))
+                )
+            );
+
+            for (const msg of visible_messages) {
                 let content = msg.content;
                 if (Array.isArray(content)) {
                     const texts = content
@@ -457,9 +644,16 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                         .map(b => b.text);
                     content = texts.join("\n");
                 }
-                if (content && msg.role !== "system") {
+                if (content) {
                     this.add_message(msg.role, content);
                 }
+            }
+
+            // Show templates only when the session has no visible messages
+            if (visible_messages.length === 0) {
+                this._show_templates();
+            } else {
+                this.$messages.find(".ai-templates-grid").hide();
             }
 
             // Highlight active item in sidebar
@@ -504,11 +698,18 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     _render_sidebar_sessions() {
-        const filtered = this._active_category === "All"
+        let filtered = this._active_category === "All"
             ? this._all_sessions
             : this._all_sessions.filter(s =>
                 (s.category || "General") === this._active_category
               );
+
+        // Apply search query filter (instant, client-side)
+        if (this._search_query) {
+            filtered = filtered.filter(s =>
+                (s.title || "").toLowerCase().includes(this._search_query)
+            );
+        }
 
         // Pinned sessions float to the top, order within each group preserved
         const sorted = [
@@ -679,6 +880,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         if (!retry_message) {
             this.$input.val("").trigger("input");
             this.add_message("user", message);
+            // Hide templates on first real send
+            this.$messages.find(".ai-templates-grid").hide();
         }
         this.is_streaming = true;
         this._last_message = message;
@@ -694,7 +897,11 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         try {
             const result = await frappe.call({
                 method: "erpnext_ai_bots.api.chat.send_message",
-                args: { message: message, session_id: this.session_id },
+                args: {
+                    message: message,
+                    session_id: this.session_id,
+                    company: this._current_company || null,
+                },
                 async: true,
             });
 
@@ -957,6 +1164,46 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._scroll_bottom();
     }
 
+    /** Show or re-show the quick-action templates grid in the messages area. */
+    _show_templates() {
+        // If the grid already exists in the DOM just make it visible
+        const $existing = this.$messages.find(".ai-templates-grid");
+        if ($existing.length) {
+            $existing.show();
+            return;
+        }
+        // Otherwise inject a fresh grid (e.g. after $messages.empty())
+        const $grid = $(`
+            <div class="ai-templates-grid">
+                <div class="ai-template-card" data-prompt="Show me today's sales summary">
+                    <span class="ai-template-icon">📊</span>
+                    <span class="ai-template-text">Today's Sales</span>
+                </div>
+                <div class="ai-template-card" data-prompt="List all overdue invoices">
+                    <span class="ai-template-icon">⚠️</span>
+                    <span class="ai-template-text">Overdue Invoices</span>
+                </div>
+                <div class="ai-template-card" data-prompt="What is our current stock level for low-stock items?">
+                    <span class="ai-template-icon">📦</span>
+                    <span class="ai-template-text">Low Stock Alert</span>
+                </div>
+                <div class="ai-template-card" data-prompt="Show me the top 10 customers by revenue this month">
+                    <span class="ai-template-icon">👥</span>
+                    <span class="ai-template-text">Top Customers</span>
+                </div>
+                <div class="ai-template-card" data-prompt="What is our bank balance across all accounts?">
+                    <span class="ai-template-icon">🏦</span>
+                    <span class="ai-template-text">Bank Balances</span>
+                </div>
+                <div class="ai-template-card" data-prompt="Create a quotation">
+                    <span class="ai-template-icon">📝</span>
+                    <span class="ai-template-text">New Quotation</span>
+                </div>
+            </div>
+        `);
+        this.$messages.prepend($grid);
+    }
+
     /**
      * Append a green delivered tick to the given bot message element.
      * @param {jQuery} $msg
@@ -969,6 +1216,61 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         if (this.stream_handler) {
             this.stream_handler.destroy();
             this.stream_handler = null;
+        }
+    }
+
+    // ── Export ───────────────────────────────────────────────────────
+
+    async _export_html() {
+        if (!this.session_id) {
+            frappe.show_alert({ message: __("No active conversation to export"), indicator: "orange" });
+            return;
+        }
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.export_session_html",
+                args: { session_id: this.session_id },
+                async: true,
+            });
+            const data = r.message || {};
+            if (!data.html) {
+                frappe.show_alert({ message: __("Export failed"), indicator: "red" });
+                return;
+            }
+            // Open in a new tab via Blob URL so the user can print to PDF
+            const blob = new Blob([data.html], { type: "text/html;charset=utf-8" });
+            const url  = URL.createObjectURL(blob);
+            const win  = window.open(url, "_blank");
+            // Revoke the object URL after the window has a chance to load it
+            if (win) {
+                win.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+            }
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not export conversation"), indicator: "red" });
+        }
+    }
+
+    async _export_csv() {
+        if (!this.session_id) {
+            frappe.show_alert({ message: __("No active conversation to export"), indicator: "orange" });
+            return;
+        }
+        try {
+            // Use a form POST so the browser triggers the file download
+            // that the server sets up via frappe.response["type"] = "download".
+            const base = frappe.request.url || "/api/method/";
+            const url  = `/api/method/erpnext_ai_bots.api.chat.export_session_csv`
+                       + `?session_id=${encodeURIComponent(this.session_id)}`
+                       + `&cmd=erpnext_ai_bots.api.chat.export_session_csv`;
+            // The simplest cross-browser way is a temporary <a> click
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${this.session_id}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not export conversation"), indicator: "red" });
         }
     }
 };

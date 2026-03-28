@@ -1,3 +1,5 @@
+import csv
+import io
 import frappe
 import json
 from frappe import _
@@ -56,7 +58,19 @@ def _has_openai_token() -> bool:
 
 
 @frappe.whitelist()
-def send_message(message: str, session_id: str = None):
+def get_companies():
+    """Get companies the current user has access to."""
+    return frappe.get_all(
+        "Company",
+        filters={},
+        fields=["name", "company_name", "default_currency"],
+        order_by="name asc",
+        limit_page_length=20,
+    )
+
+
+@frappe.whitelist()
+def send_message(message: str, session_id: str = None, company: str = None):
     """Main chat endpoint. Initiates agent processing.
 
     The response text is NOT returned in this HTTP response.
@@ -66,7 +80,8 @@ def send_message(message: str, session_id: str = None):
         frappe.throw(_("Message cannot be empty"))
 
     user = frappe.session.user
-    company = frappe.defaults.get_user_default("company", user)
+    if not company:
+        company = frappe.defaults.get_user_default("company", user)
 
     # Check if provider requires OpenAI token
     settings = frappe.get_cached_doc("AI Bot Settings")
@@ -251,3 +266,182 @@ def confirm_action(action_type: str, doctype: str, name: str):
         return {"status": "deleted", "name": name}
     else:
         frappe.throw(_("Unknown action type: {0}").format(action_type))
+
+
+# ── Export endpoints ──────────────────────────────────────────────────────────
+
+
+def _load_session_for_export(session_id: str):
+    """Verify ownership and return (session doc, messages list).
+
+    Raises PermissionError if the current user does not own the session.
+    """
+    user = frappe.session.user
+    session = frappe.get_doc("AI Chat Session", session_id)
+    if session.user != user and "System Manager" not in frappe.get_roles(user):
+        frappe.throw(_("Access denied"), frappe.PermissionError)
+
+    messages = json.loads(session.messages_json or "[]")
+    return session, messages
+
+
+def _extract_text_content(content) -> str:
+    """Flatten a message content value to a plain string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "\n".join(filter(None, parts))
+    return ""
+
+
+@frappe.whitelist()
+def export_session_html(session_id: str):
+    """Export a chat session as a self-contained HTML page suitable for printing / PDF.
+
+    Returns the HTML string directly so the frontend can open it in a new tab
+    via a Blob URL (no file-download plumbing needed server-side).
+    """
+    session, messages = _load_session_for_export(session_id)
+
+    title = frappe.utils.escape_html(session.title or session_id)
+    date = frappe.utils.formatdate(
+        (session.last_message_at or session.creation or "").split(" ")[0]
+    )
+    visible = [m for m in messages if m.get("role") in ("user", "assistant")]
+    count = len(visible)
+
+    messages_html_parts = []
+    for msg in visible:
+        role = msg.get("role", "")
+        text = frappe.utils.escape_html(_extract_text_content(msg.get("content", "")))
+        css_class = "user" if role == "user" else "bot"
+        label = "You" if role == "user" else "AI Assistant"
+        ts_raw = msg.get("timestamp", "")
+        ts = frappe.utils.escape_html(str(ts_raw))
+        messages_html_parts.append(
+            f'<div class="msg {css_class}">'
+            f'<div class="msg-label">{label}'
+            + (f' &mdash; <small>{ts}</small>' if ts else "")
+            + f"</div>"
+            f"<div class=\"msg-body\">{text}</div>"
+            f"</div>"
+        )
+
+    messages_html = "\n".join(messages_html_parts)
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #1e293b;
+    background: #f8fafc;
+    padding: 40px 20px;
+  }}
+  .page {{
+    max-width: 800px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    overflow: hidden;
+  }}
+  .page-header {{
+    background: linear-gradient(135deg, #6c5ce7 0%, #4c3eb0 100%);
+    color: #fff;
+    padding: 24px 32px;
+  }}
+  .page-header h1 {{ font-size: 20px; font-weight: 700; margin-bottom: 4px; }}
+  .page-header p  {{ font-size: 13px; opacity: 0.85; }}
+  .page-body {{ padding: 24px 32px; display: flex; flex-direction: column; gap: 12px; }}
+  .msg {{
+    padding: 10px 14px;
+    border-radius: 12px;
+    max-width: 80%;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }}
+  .msg-label {{
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.7;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }}
+  .user {{
+    background: #6c5ce7;
+    color: #fff;
+    align-self: flex-end;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+  }}
+  .bot {{
+    background: #f1f5f9;
+    color: #1e293b;
+    border-left: 3px solid #6c5ce7;
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+  }}
+  table {{ border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }}
+  th, td {{ padding: 6px 10px; border: 1px solid #e2e8f0; text-align: left; }}
+  th {{ background: #f8fafc; font-weight: 600; }}
+  @media print {{
+    body {{ background: #fff; padding: 0; }}
+    .page {{ box-shadow: none; border-radius: 0; }}
+  }}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-header">
+    <h1>{title}</h1>
+    <p>Session: {frappe.utils.escape_html(session_id)} &nbsp;&middot;&nbsp; Date: {date} &nbsp;&middot;&nbsp; {count} message{"s" if count != 1 else ""}</p>
+  </div>
+  <div class="page-body">
+{messages_html}
+  </div>
+</div>
+</body>
+</html>"""
+
+    return {"html": html, "title": session.title or session_id}
+
+
+@frappe.whitelist()
+def export_session_csv(session_id: str):
+    """Export a chat session as a CSV file download.
+
+    Sets frappe.response to trigger a file download in the browser.
+    Columns: Timestamp, Role, Content.
+    """
+    session, messages = _load_session_for_export(session_id)
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+    writer.writerow(["Timestamp", "Role", "Content"])
+
+    for msg in messages:
+        role = msg.get("role", "")
+        if role not in ("user", "assistant"):
+            continue
+        ts = str(msg.get("timestamp", ""))
+        text = _extract_text_content(msg.get("content", ""))
+        writer.writerow([ts, role, text])
+
+    frappe.response["filename"] = f"{session_id}.csv"
+    frappe.response["filecontent"] = output.getvalue().encode("utf-8")
+    frappe.response["type"] = "download"
+    frappe.response["content_type"] = "text/csv; charset=utf-8"

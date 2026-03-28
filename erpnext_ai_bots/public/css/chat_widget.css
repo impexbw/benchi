@@ -766,3 +766,170 @@
 .ai-doc-link:hover {
     opacity: 0.8;
 }
+
+/* ── Sidebar session search ──────────────────────────────────────────────── */
+.ai-sidebar-search-wrap {
+    padding: 0 10px 8px;
+    flex-shrink: 0;
+}
+
+.ai-sidebar-search {
+    font-size: 12px;
+    height: 30px;
+    border-radius: 6px;
+    width: 100%;
+}
+
+/* ── Export dropdown menu ────────────────────────────────────────────────── */
+.ai-export-menu {
+    position: fixed;
+    z-index: 2000;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+    padding: 4px;
+    min-width: 210px;
+}
+
+.ai-export-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 7px 12px;
+    font-size: 13px;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--text-color, #334155);
+    transition: background 0.12s;
+}
+
+.ai-export-menu button:hover {
+    background: var(--control-bg, #f1f5f9);
+}
+
+/* ── Header layout: left group (title + company) + right actions ─────────── */
+.ai-chat-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+    flex: 1;
+}
+
+/* ── Company badge & dropdown ────────────────────────────────────────────── */
+.ai-company-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(108, 92, 231, 0.12);
+    color: var(--ai-accent, #6c5ce7);
+    cursor: pointer;
+    margin-left: 8px;
+    white-space: nowrap;
+    user-select: none;
+    flex-shrink: 0;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ai-company-badge:hover {
+    background: rgba(108, 92, 231, 0.2);
+}
+
+/* Expanded mode: badge text is white to sit on gradient header */
+.ai-chat-panel-expanded .ai-company-badge {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
+
+.ai-chat-panel-expanded .ai-company-badge:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.ai-company-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    min-width: 200px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+}
+
+.ai-company-option {
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-color, #334155);
+    transition: background 0.12s;
+}
+
+.ai-company-option:hover {
+    background: var(--control-bg, #f1f5f9);
+}
+
+.ai-company-option.active {
+    color: var(--ai-accent, #6c5ce7);
+    font-weight: 600;
+}
+
+/* System note — company switch confirmation */
+.ai-msg-system-note {
+    align-self: center;
+    background: transparent;
+    border: 1px dashed var(--border-color, #e2e8f0);
+    border-left: none;
+    color: var(--text-muted, #64748b);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    max-width: 100%;
+    text-align: center;
+}
+
+/* ── Quick-action templates ──────────────────────────────────────────────── */
+.ai-templates-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 16px;
+}
+
+.ai-template-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s, border-color 0.15s;
+    background: var(--card-bg, #fff);
+}
+
+.ai-template-card:hover {
+    background: rgba(108, 92, 231, 0.08);
+    border-color: var(--ai-accent, #6c5ce7);
+}
+
+.ai-template-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.ai-template-text {
+    color: var(--text-color, #334155);
+    font-weight: 500;
+    line-height: 1.3;
+}
