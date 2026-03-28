@@ -106,7 +106,7 @@ def get_companies():
 
 
 @frappe.whitelist()
-def send_message(message: str, session_id: str = None, company: str = None):
+def send_message(message: str, session_id: str = None, company: str = None, image_url: str = None):
     """Main chat endpoint. Initiates agent processing.
 
     The response text is NOT returned in this HTTP response.
@@ -164,6 +164,7 @@ def send_message(message: str, session_id: str = None, company: str = None):
         session_id=session_id,
         message=message,
         company=company,
+        image_url=image_url,
     )
 
     return {"session_id": session_id, "status": "processing"}

@@ -961,18 +961,21 @@
 
 /* ── Inline Chart Blocks ──────────────────────────────────────────────── */
 .ai-chart-container {
-    background: var(--ai-bg-deep);
-    border: 1px solid var(--ai-border);
+    background: var(--ai-bg-surface);
+    border: 1px solid var(--ai-border-strong);
     border-radius: var(--ai-radius);
-    padding: 16px;
-    margin: 10px 0;
+    padding: 20px;
+    margin: 12px 0;
     max-width: 100%;
     position: relative;
+    min-height: 200px;
 }
 
 .ai-chart-container canvas {
-    max-height: 280px;
+    min-height: 180px;
+    max-height: 320px;
     width: 100% !important;
+    height: auto !important;
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
@@ -1225,4 +1228,16 @@
 /* Ultra-wide — max width so panel doesn't stretch too far */
 @media (min-width: 1800px) {
     .ai-chat-panel-expanded { width: 1280px; }
+}
+
+/* Vision image preview bubble */
+.ai-img-preview {
+    padding: 6px !important;
+}
+.ai-img-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 8px;
+    object-fit: contain;
+    display: block;
 }

@@ -59,15 +59,22 @@ class Orchestrator:
         )
         frappe.db.commit()
 
-    def handle_message(self, user_message: str):
+    def handle_message(self, user_message: str, image_url: str = None):
         """Main entry point. Called from the API endpoint."""
         # 1. Prompt injection defense
         check_prompt_injection(user_message)
 
-        # 2. Append user message
+        # 2. Append user message — store as multimodal content when an image is present
+        msg_content = user_message
+        if image_url:
+            msg_content = {
+                "text": user_message,
+                "image_url": image_url,
+            }
+
         self.messages.append({
             "role": "user",
-            "content": user_message,
+            "content": msg_content,
             "timestamp": frappe.utils.now_datetime().isoformat(),
         })
 
@@ -227,6 +234,17 @@ class Orchestrator:
         for msg in self.messages[-20:]:
             role = msg["role"]
             content = msg.get("content", "")
+
+            # Multimodal message with image (stored as a dict with text + image_url)
+            if isinstance(content, dict) and content.get("image_url"):
+                api_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": content.get("text", "Describe this image")},
+                        {"type": "input_image", "image_url": content["image_url"]},
+                    ],
+                })
+                continue
 
             if isinstance(content, list):
                 # Skip turns that contain function_call_output items
@@ -631,12 +649,12 @@ class Orchestrator:
         frappe.db.commit()
 
 
-def run_orchestrator(user: str, session_id: str, message: str, company: str):
+def run_orchestrator(user: str, session_id: str, message: str, company: str, image_url: str = None):
     """Entry point for background job execution."""
     frappe.set_user(user)
     try:
         agent = Orchestrator(user=user, session_id=session_id, company=company)
-        agent.handle_message(message)
+        agent.handle_message(message, image_url=image_url)
     except Exception as e:
         # Log the full technical error for developers
         frappe.log_error(title="AI Agent Error", message=frappe.get_traceback())

@@ -595,6 +595,16 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.style.height = Math.min(this.scrollHeight, 120) + "px";
         });
 
+        // Auto-convert long pastes (>500 chars) to a file attachment
+        this.$input.on("paste", () => {
+            setTimeout(() => {
+                const text = this.$input.val();
+                if (text.length > 500) {
+                    this._convert_paste_to_file(text);
+                }
+            }, 50);
+        });
+
         // Compact mode session selector
         this.$panel.find(".ai-chat-session-select").on("change", (e) => {
             const sid = $(e.target).val();
@@ -1160,13 +1170,20 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$current_message = null;
 
         try {
+            const args = {
+                message: actual_message,
+                session_id: this.session_id,
+                company: this._current_company || null,
+            };
+            if (this._pending_image_url) {
+                // Convert relative URL to absolute so the Codex API can fetch it
+                args.image_url = window.location.origin + this._pending_image_url;
+                this._pending_image_url = null;
+            }
+
             const result = await frappe.call({
                 method: "erpnext_ai_bots.api.chat.send_message",
-                args: {
-                    message: actual_message,
-                    session_id: this.session_id,
-                    company: this._current_company || null,
-                },
+                args,
                 async: true,
             });
 
@@ -1583,6 +1600,21 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 if (data.message) {
                     this._pending_attachment = data.message;
                     $preview.find(".ai-file-status").text("Attached").addClass("ai-file-success");
+
+                    // Store image URL for vision and show an inline thumbnail
+                    if (data.message.file_type && data.message.file_type.startsWith("image/")) {
+                        this._pending_image_url = data.message.file_url;
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const $img = $(`<div class="ai-msg ai-msg-user ai-img-preview">
+                                <img src="${e.target.result}" alt="${frappe.utils.escape_html(file.name)}" />
+                            </div>`);
+                            this.$messages.append($img);
+                            this._scroll_bottom();
+                        };
+                        reader.readAsDataURL(file);
+                    }
+
                     // Pre-fill the input so the user knows a file is queued
                     const current = this.$input.val();
                     if (!current.startsWith("[Attached:")) {
@@ -1625,6 +1657,36 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 <span class="ai-file-status">Uploading...</span>
             </div>
         `);
+    }
+
+    // ── Long-paste to file conversion ────────────────────────────────
+
+    /**
+     * Convert a long pasted text block into a .txt file attachment,
+     * mirroring the UX of Claude and ChatGPT.
+     * @param {string} text  The full pasted text (already in the textarea)
+     */
+    _convert_paste_to_file(text) {
+        const blob = new Blob([text], { type: "text/plain" });
+        const file = new File([blob], "pasted_content.txt", { type: "text/plain" });
+
+        // Clear the textarea immediately
+        this.$input.val("").trigger("input");
+
+        // Upload as a regular file attachment
+        this._upload_files([file]);
+
+        // After the upload starts, pre-fill a prompt referencing the content
+        setTimeout(() => {
+            const preview = text.substring(0, 100).replace(/\n/g, " ");
+            this.$input.val(`Analyze the pasted content: "${preview}..."`);
+            this.$input.focus();
+        }, 500);
+
+        frappe.show_alert({
+            message: __("Long text converted to file attachment"),
+            indicator: "blue",
+        });
     }
 
     // ── Feature 17: Voice input ───────────────────────────────────────
