@@ -683,7 +683,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     async send(retry_message) {
         const message = retry_message || this.$input.val().trim();
-        if (!message || this.is_streaming) return;
+        if (!message) return;
 
         if (!retry_message) {
             this.$input.val("").trigger("input");
@@ -691,7 +691,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         }
         this.is_streaming = true;
         this._last_message = message;
-        this.$panel.find(".ai-chat-send").prop("disabled", true);
+        // Don't disable send — let user queue messages
 
         // Remove any leftover status indicators and show THINKING state
         this._remove_status_indicators();
@@ -896,7 +896,6 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         clearTimeout(this._tool_hide_timeout);
         this._tool_hide_timeout = null;
         this.$tool_indicator.hide();
-        this.$panel.find(".ai-chat-send").prop("disabled", false);
         if (this._stream_timeout) {
             clearTimeout(this._stream_timeout);
             this._stream_timeout = null;
