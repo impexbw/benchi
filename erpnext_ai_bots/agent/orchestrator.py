@@ -638,10 +638,27 @@ def run_orchestrator(user: str, session_id: str, message: str, company: str):
         agent = Orchestrator(user=user, session_id=session_id, company=company)
         agent.handle_message(message)
     except Exception as e:
+        # Log the full technical error for developers
+        frappe.log_error(title="AI Agent Error", message=frappe.get_traceback())
+
+        # Determine a friendly message — never expose raw errors to users
+        raw_error = str(e).lower()
+        if "permission" in raw_error:
+            friendly_msg = "You don't have permission for that action. Ask your admin for access."
+        elif "not found" in raw_error:
+            friendly_msg = "I couldn't find what you're looking for. Could you double-check the name?"
+        elif "timeout" in raw_error or "timed out" in raw_error:
+            friendly_msg = "The request took too long. Please try again with a simpler question."
+        elif "rate limit" in raw_error or "rate_limit" in raw_error:
+            friendly_msg = "The AI service is temporarily busy. Please wait a moment and try again."
+        elif "api key" in raw_error or "authentication" in raw_error:
+            friendly_msg = "There is a configuration issue with the AI service. Please contact your administrator."
+        else:
+            friendly_msg = "I ran into an issue processing your request. Please try again."
+
         frappe.publish_realtime(
             event="ai_error",
-            message={"session_id": session_id, "error": str(e)},
+            message={"session_id": session_id, "error": friendly_msg},
             user=user,
             after_commit=False,
         )
-        frappe.log_error(title="AI Agent Error", message=frappe.get_traceback())

@@ -121,6 +121,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._all_sessions = [];         // cached sessions array
         this._ctx_menu_target = null;    // session id under context menu
         this._last_message = null;       // last sent message text, for retry
+        this._loading_session = false;   // guard against concurrent _load_session calls
         this.render();
         this.bind_events();
         this._load_last_session();
@@ -416,35 +417,23 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     async _load_session(session_id) {
-        // If currently streaming a DIFFERENT session, let it finish in background
-        if (this.is_streaming && this.session_id && this.session_id !== session_id) {
-            // Keep the stream handler alive — it will update the DB when done
-            // Just detach it from the current UI
-            const old_sid = this.session_id;
-            const old_handler = this.stream_handler;
-            this.stream_handler = null;
-            this.is_streaming = false;
-            this.$panel.find(".ai-chat-send").prop("disabled", false);
-            this._remove_status_indicators();
+        // Prevent concurrent load calls (race between init and user click)
+        if (this._loading_session) return;
+        this._loading_session = true;
 
-            // When the old session finishes, show a notification and refresh sidebar
-            if (old_handler) {
-                // Replace callbacks to just notify
-                frappe.realtime.on("ai_done", (data) => {
-                    if (data.session_id === old_sid) {
-                        frappe.show_alert({ message: __("AI finished processing in background"), indicator: "blue" });
-                        if (this.is_expanded) this._load_sessions_list();
-                        // Clean up this one-time listener
-                        frappe.realtime.off("ai_done", arguments.callee);
-                        old_handler.destroy();
-                    }
-                });
-            }
-        } else {
-            // Same session or not streaming — normal reset
+        // If switching away from a streaming session, just stop listening.
+        // The backend job continues and saves to DB on its own.
+        // When the user clicks back, _load_session will fetch the completed
+        // response from the database.
+        if (this.is_streaming) {
             this.is_streaming = false;
-            this.$panel.find(".ai-chat-send").prop("disabled", false);
             this._cleanup_stream();
+            this._remove_status_indicators();
+            this.$panel.find(".ai-chat-send").prop("disabled", false);
+            if (this._stream_timeout) {
+                clearTimeout(this._stream_timeout);
+                this._stream_timeout = null;
+            }
         }
 
         this._remove_status_indicators();
@@ -484,6 +473,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             setTimeout(() => this._scroll_bottom(), 100);
         } catch (e) {
             // Silently fail
+        } finally {
+            this._loading_session = false;
         }
     }
 
