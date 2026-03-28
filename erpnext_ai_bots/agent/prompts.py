@@ -199,7 +199,17 @@ core_send_email
   someone. Pass "self" or "me" as recipients to send to the current user.
   The body can include HTML tables for formatted data.
 
--- VISION TOOLS --
+-- FILE & VISION TOOLS --
+core_read_file
+  Use when: user uploads a non-image file (CSV, Excel, PDF, TXT, JSON) and asks
+  questions about it, wants to match data with ERPNext, or needs analysis.
+  Returns structured data (headers + rows for CSV/Excel, text for PDF/TXT).
+  After reading, use other tools to cross-reference with ERPNext:
+  - Match item codes with stock_get_item_info
+  - Match customer names with sales_get_customer_info
+  - Run SQL queries to find matching records
+  - Create documents based on the file data
+
 core_analyze_image
   Use when: user uploads an image and asks what it is, or wants to analyze a
   photo, screenshot, invoice scan, or document image. Pass the file URL from

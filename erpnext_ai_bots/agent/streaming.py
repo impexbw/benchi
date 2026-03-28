@@ -106,6 +106,7 @@ class StreamBridge:
             "core.frappe_api": "Querying ERPNext data",
             "core.send_email": "Sending email",
             "core.analyze_image": "Analyzing image",
+            "core.read_file": "Reading file",
             "meta.spawn_subagent": "Working on complex task",
             "meta.schedule_task": "Setting up scheduled task",
         }
