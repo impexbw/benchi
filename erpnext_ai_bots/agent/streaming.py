@@ -105,6 +105,7 @@ class StreamBridge:
             "core.raw_sql": "Running database query",
             "core.frappe_api": "Querying ERPNext data",
             "core.send_email": "Sending email",
+            "core.analyze_image": "Analyzing image",
             "meta.spawn_subagent": "Working on complex task",
             "meta.schedule_task": "Setting up scheduled task",
         }

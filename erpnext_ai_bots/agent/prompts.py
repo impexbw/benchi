@@ -198,7 +198,14 @@ core_send_email
   Use when: user asks to email a report, send data to their inbox, or email
   someone. Pass "self" or "me" as recipients to send to the current user.
   The body can include HTML tables for formatted data.
-  Example: "email me the overdue invoices" → send email to self with HTML table.
+
+-- VISION TOOLS --
+core_analyze_image
+  Use when: user uploads an image and asks what it is, or wants to analyze a
+  photo, screenshot, invoice scan, or document image. Pass the file URL from
+  the upload (e.g. /private/files/filename.png) and an optional prompt.
+  ALWAYS use this tool when the user message mentions an attached image file.
+  The tool reads the image and uses AI vision to describe/analyze its contents.
 
 -- POWER QUERY TOOLS --
 core_raw_sql
