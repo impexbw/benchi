@@ -6,6 +6,42 @@ from frappe import _
 from erpnext_ai_bots.guards.rate_limiter import RateLimiter
 
 
+@frappe.whitelist()
+def upload_file(session_id: str = None):
+    """Upload a file and return its URL. Optionally attach to a session."""
+    if not frappe.request.files:
+        frappe.throw(_("No file uploaded"))
+
+    file = frappe.request.files.get("file")
+    if not file:
+        frappe.throw(_("No file found in request"))
+
+    # Verify session ownership when a session_id is provided
+    if session_id:
+        session_user = frappe.db.get_value("AI Chat Session", session_id, "user")
+        if session_user and session_user != frappe.session.user:
+            frappe.throw(_("Access denied"), frappe.PermissionError)
+
+    file_content = file.read()
+    ret = frappe.get_doc({
+        "doctype": "File",
+        "file_name": file.filename,
+        "content": file_content,
+        "attached_to_doctype": "AI Chat Session" if session_id else None,
+        "attached_to_name": session_id if session_id else None,
+        "is_private": 1,
+    })
+    ret.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    return {
+        "file_url": ret.file_url,
+        "file_name": ret.file_name,
+        "file_type": file.content_type,
+        "file_size": ret.file_size,
+    }
+
+
 # ── Category keyword maps ────────────────────────────────────────────────────
 
 _CATEGORY_KEYWORDS = {

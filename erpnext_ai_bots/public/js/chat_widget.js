@@ -294,11 +294,20 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._search_query = "";         // sidebar session search filter
         this._current_company = null;    // active company context
         this._all_companies = [];        // cached companies list
+        // Feature 16: File attachments
+        this._pending_attachment = null; // uploaded file waiting to be sent
+        // Feature 17: Voice input
+        this._is_recording = false;
+        this._recognition = null;
+        // Feature 17: ElevenLabs TTS
+        this._elevenlabs_key = "";
+        this._elevenlabs_voice_id = "21m00Tcm4TlvDq8ikWAM";
         this.render();
         this.bind_events();
         this._load_last_session();
         this._load_accent_color();
         this._load_companies();
+        this._load_elevenlabs_config();
     }
 
     // ── Accent color ─────────────────────────────────────────────────
@@ -503,9 +512,26 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                             <span class="ai-tool-name"></span>
                         </div>
                         <div class="ai-chat-input-area">
+                            <button class="ai-chat-attach btn btn-xs" title="Attach file">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="2">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                                </svg>
+                            </button>
+                            <input type="file" class="ai-chat-file-input" style="display:none"
+                                   multiple accept="image/*,.pdf,.csv,.xlsx,.txt,.json" />
                             <textarea class="ai-chat-input"
                                 placeholder="Ask about your ERPNext data..."
                                 rows="1"></textarea>
+                            <button class="ai-chat-voice btn btn-xs" title="Voice input">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="2">
+                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                    <line x1="12" y1="19" x2="12" y2="23"/>
+                                    <line x1="8" y1="23" x2="16" y2="23"/>
+                                </svg>
+                            </button>
                             <button class="ai-chat-send btn btn-primary btn-sm">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                                      stroke="currentColor" stroke-width="2">
@@ -688,6 +714,51 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             const prompt = $(e.currentTarget).data("prompt");
             this.$input.val(prompt);
             this.send();
+        });
+
+        // ── Feature 16: File attachments ──────────────────────────────
+
+        // Attach button clicks the hidden file input
+        this.$panel.find(".ai-chat-attach").on("click", () => {
+            this.$panel.find(".ai-chat-file-input").trigger("click");
+        });
+
+        // Hidden file input change handler
+        this.$panel.find(".ai-chat-file-input").on("change", (e) => {
+            const files = e.target.files;
+            if (files && files.length) {
+                this._upload_files(Array.from(files));
+            }
+            e.target.value = ""; // Reset so same file can be re-selected
+        });
+
+        // Drag & drop on the messages area
+        this.$messages.on("dragover", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.$messages.addClass("ai-drag-over");
+        });
+
+        this.$messages.on("dragleave", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.$messages.removeClass("ai-drag-over");
+        });
+
+        this.$messages.on("drop", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.$messages.removeClass("ai-drag-over");
+            const files = e.originalEvent.dataTransfer.files;
+            if (files && files.length) {
+                this._upload_files(Array.from(files));
+            }
+        });
+
+        // ── Feature 17: Voice input ────────────────────────────────────
+
+        this.$panel.find(".ai-chat-voice").on("click", () => {
+            this._toggle_voice_input();
         });
     }
 
@@ -1064,6 +1135,13 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         const message = retry_message || this.$input.val().trim();
         if (!message) return;
 
+        // Build the actual message sent to the AI, prepending file context if available
+        let actual_message = message;
+        if (!retry_message && this._pending_attachment) {
+            actual_message = `[File attached: ${this._pending_attachment.file_name} (${this._pending_attachment.file_type}), URL: ${this._pending_attachment.file_url}]\n\n${message}`;
+            this._pending_attachment = null;
+        }
+
         if (!retry_message) {
             this.$input.val("").trigger("input");
             this.add_message("user", message);
@@ -1071,7 +1149,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.$messages.find(".ai-templates-grid").hide();
         }
         this.is_streaming = true;
-        this._last_message = message;
+        this._last_message = actual_message;
         // Don't disable send — let user queue messages
 
         // Remove any leftover status indicators and show THINKING state
@@ -1085,7 +1163,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             const result = await frappe.call({
                 method: "erpnext_ai_bots.api.chat.send_message",
                 args: {
-                    message: message,
+                    message: actual_message,
                     session_id: this.session_id,
                     company: this._current_company || null,
                 },
@@ -1256,9 +1334,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 },
                 onDone: () => {
                     this._finish_streaming();
-                    // Add delivered tick to the bot message
+                    // Add delivered tick and optional TTS button to the bot message
                     if (this.$current_message) {
                         this._add_delivered_tick(this.$current_message);
+                        this._add_tts_button(this.$current_message);
                     }
                     // Refresh sidebar after response so message counts update
                     if (this.is_expanded) {
@@ -1397,6 +1476,232 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
      */
     _add_delivered_tick($msg) {
         $msg.append('<span class="ai-delivered-tick" title="Delivered">&#10003;</span>');
+    }
+
+    // ── Feature 17: TTS button ────────────────────────────────────────
+
+    /**
+     * Append a speaker button to a bot message bubble.
+     * Only shown when an ElevenLabs API key is configured.
+     * @param {jQuery} $msg
+     */
+    _add_tts_button($msg) {
+        if (!this._elevenlabs_key) return;
+        const $btn = $('<button class="ai-tts-btn" title="Listen">&#128266;</button>');
+        $msg.append($btn);
+        $btn.on("click", async (e) => {
+            e.stopPropagation();
+            // Extract plain text — strip HTML tags
+            const text = $msg.clone().find(".ai-delivered-tick, .ai-tts-btn").remove().end().text().trim();
+            if (!text) return;
+            $btn.text("⏳");
+            try {
+                const resp = await fetch(
+                    "https://api.elevenlabs.io/v1/text-to-speech/" + this._elevenlabs_voice_id,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "xi-api-key": this._elevenlabs_key,
+                        },
+                        body: JSON.stringify({
+                            text: text.substring(0, 5000),
+                            model_id: "eleven_multilingual_v2",
+                        }),
+                    }
+                );
+                if (!resp.ok) {
+                    throw new Error("TTS API error: " + resp.status);
+                }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.play();
+                $btn.html("&#128266;");
+                audio.onended = () => URL.revokeObjectURL(url);
+            } catch (err) {
+                $btn.html("&#128266;");
+                frappe.show_alert({ message: __("Text-to-speech failed"), indicator: "red" });
+            }
+        });
+    }
+
+    /**
+     * Load ElevenLabs TTS configuration from AI Bot Settings.
+     * Silently does nothing if the key is not set.
+     */
+    async _load_elevenlabs_config() {
+        try {
+            const r = await frappe.call({
+                method: "frappe.client.get_value",
+                args: {
+                    doctype: "AI Bot Settings",
+                    fieldname: ["elevenlabs_api_key", "elevenlabs_voice_id"],
+                },
+                async: true,
+            });
+            if (r.message) {
+                this._elevenlabs_key = r.message.elevenlabs_api_key || "";
+                this._elevenlabs_voice_id = r.message.elevenlabs_voice_id || "21m00Tcm4TlvDq8ikWAM";
+            }
+        } catch (e) {
+            // Silently fall back — TTS is optional
+        }
+    }
+
+    // ── Feature 16: File upload ───────────────────────────────────────
+
+    /**
+     * Upload an array of File objects one by one, showing a preview bubble
+     * for each. The last successfully uploaded file is stored as
+     * this._pending_attachment so it gets prepended to the next sent message.
+     * @param {File[]} files
+     */
+    async _upload_files(files) {
+        for (const file of files) {
+            const $preview = this._create_file_preview(file);
+            this.$messages.append($preview);
+            this._scroll_bottom();
+
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("session_id", this.session_id || "");
+
+                const response = await fetch(
+                    "/api/method/erpnext_ai_bots.api.chat.upload_file",
+                    {
+                        method: "POST",
+                        body: formData,
+                        headers: {
+                            "X-Frappe-CSRF-Token": frappe.csrf_token,
+                        },
+                    }
+                );
+                const data = await response.json();
+
+                if (data.message) {
+                    this._pending_attachment = data.message;
+                    $preview.find(".ai-file-status").text("Attached").addClass("ai-file-success");
+                    // Pre-fill the input so the user knows a file is queued
+                    const current = this.$input.val();
+                    if (!current.startsWith("[Attached:")) {
+                        this.$input.val(`[Attached: ${data.message.file_name}] `);
+                    }
+                    this.$input.focus();
+                } else {
+                    $preview.find(".ai-file-status").text("Failed").addClass("ai-file-error");
+                }
+            } catch (err) {
+                $preview.find(".ai-file-status").text("Failed").addClass("ai-file-error");
+            }
+        }
+    }
+
+    /**
+     * Build a file-preview bubble shown inline while uploading.
+     * @param {File} file
+     * @returns {jQuery}
+     */
+    _create_file_preview(file) {
+        let icon;
+        if (file.type.startsWith("image/")) {
+            icon = "&#128444;"; // 🖼
+        } else if (file.type.includes("pdf")) {
+            icon = "&#128196;"; // 📄
+        } else if (file.type.includes("csv") || file.type.includes("excel") || file.type.includes("spreadsheet")) {
+            icon = "&#128202;"; // 📊
+        } else {
+            icon = "&#128206;"; // 📎
+        }
+        const size = (file.size / 1024).toFixed(1) + " KB";
+        return $(`
+            <div class="ai-msg ai-msg-user ai-file-preview">
+                <span class="ai-file-icon">${icon}</span>
+                <div class="ai-file-info">
+                    <span class="ai-file-name">${frappe.utils.escape_html(file.name)}</span>
+                    <span class="ai-file-size">${size}</span>
+                </div>
+                <span class="ai-file-status">Uploading...</span>
+            </div>
+        `);
+    }
+
+    // ── Feature 17: Voice input ───────────────────────────────────────
+
+    /**
+     * Toggle the Web Speech API microphone recording. Starts recording on the
+     * first call and stops on the second. Automatically sends the transcript
+     * when recording ends if the input has text.
+     */
+    _toggle_voice_input() {
+        if (this._is_recording) {
+            this._stop_voice();
+            return;
+        }
+
+        if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+            frappe.show_alert({
+                message: __("Voice input not supported in this browser. Use Chrome or Edge."),
+                indicator: "orange",
+            });
+            return;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this._recognition = new SpeechRecognition();
+        this._recognition.continuous = false;
+        this._recognition.interimResults = true;
+        this._recognition.lang = "en-US";
+
+        this._recognition.onstart = () => {
+            this._is_recording = true;
+            this.$panel.find(".ai-chat-voice").addClass("ai-voice-active");
+            this.$input.attr("placeholder", "Listening...");
+        };
+
+        this._recognition.onresult = (event) => {
+            let transcript = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                transcript += event.results[i][0].transcript;
+            }
+            this.$input.val(transcript).trigger("input");
+        };
+
+        this._recognition.onend = () => {
+            this._is_recording = false;
+            this.$panel.find(".ai-chat-voice").removeClass("ai-voice-active");
+            this.$input.attr("placeholder", "Ask about your ERPNext data...");
+            // Auto-send if the input has text
+            const text = this.$input.val().trim();
+            if (text) {
+                this.send();
+            }
+        };
+
+        this._recognition.onerror = (event) => {
+            this._is_recording = false;
+            this.$panel.find(".ai-chat-voice").removeClass("ai-voice-active");
+            this.$input.attr("placeholder", "Ask about your ERPNext data...");
+            if (event.error !== "no-speech") {
+                frappe.show_alert({
+                    message: __("Voice error: " + event.error),
+                    indicator: "red",
+                });
+            }
+        };
+
+        this._recognition.start();
+    }
+
+    /** Stop an in-progress voice recording. */
+    _stop_voice() {
+        if (this._recognition) {
+            this._recognition.stop();
+        }
+        this._is_recording = false;
+        this.$panel.find(".ai-chat-voice").removeClass("ai-voice-active");
+        this.$input.attr("placeholder", "Ask about your ERPNext data...");
     }
 
     _cleanup_stream() {

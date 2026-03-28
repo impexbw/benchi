@@ -12,6 +12,8 @@
   "provider",
   "api_key",
   "model_name",
+  "elevenlabs_api_key",
+  "elevenlabs_voice_id",
   "max_tokens_per_request",
   "temperature",
   "oauth_section",
@@ -87,6 +89,19 @@
    "fieldname": "model_name",
    "fieldtype": "Data",
    "label": "Model"
+  },
+  {
+   "description": "ElevenLabs API key for text-to-speech. Leave blank to disable TTS.",
+   "fieldname": "elevenlabs_api_key",
+   "fieldtype": "Password",
+   "label": "ElevenLabs API Key"
+  },
+  {
+   "default": "21m00Tcm4TlvDq8ikWAM",
+   "description": "ElevenLabs voice ID (default: Rachel). Find IDs at elevenlabs.io/voice-lab.",
+   "fieldname": "elevenlabs_voice_id",
+   "fieldtype": "Data",
+   "label": "ElevenLabs Voice ID"
   },
   {
    "default": "4096",

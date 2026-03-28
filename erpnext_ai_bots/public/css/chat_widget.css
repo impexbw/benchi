@@ -1072,6 +1072,140 @@
     }
 }
 
+/* ── Feature 16: Attach Button ────────────────────────────────────────── */
+.ai-chat-attach {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ai-radius);
+    color: var(--ai-text-dim);
+    background: transparent;
+    border: 1px solid var(--ai-border);
+    flex-shrink: 0;
+    transition: all 0.12s;
+    cursor: pointer;
+}
+
+.ai-chat-attach:hover {
+    color: var(--ai-accent);
+    border-color: var(--ai-accent);
+    background: var(--ai-glow);
+}
+
+/* ── Feature 16: Drag-Over State ──────────────────────────────────────── */
+.ai-drag-over {
+    background: var(--ai-glow) !important;
+    border: 2px dashed var(--ai-accent) !important;
+    border-radius: var(--ai-radius);
+    transition: background 0.15s, border 0.15s;
+}
+
+/* ── Feature 16: File Preview Bubble ─────────────────────────────────── */
+.ai-file-preview {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px !important;
+    background: var(--ai-bg-elevated) !important;
+    border: 1px solid var(--ai-border) !important;
+    max-width: 320px;
+}
+
+.ai-file-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.ai-file-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ai-file-name {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ai-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ai-file-size {
+    font-size: 11px;
+    color: var(--ai-text-dim);
+}
+
+.ai-file-status {
+    font-size: 11px;
+    color: var(--ai-text-dim);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.ai-file-success { color: var(--ai-success) !important; }
+.ai-file-error   { color: var(--ai-error)   !important; }
+
+/* ── Feature 17: Voice Button ─────────────────────────────────────────── */
+.ai-chat-voice {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ai-radius);
+    color: var(--ai-text-dim);
+    background: transparent;
+    border: 1px solid var(--ai-border);
+    flex-shrink: 0;
+    transition: all 0.12s;
+    cursor: pointer;
+}
+
+.ai-chat-voice:hover {
+    color: var(--ai-accent);
+    border-color: var(--ai-accent);
+    background: var(--ai-glow);
+}
+
+/* Recording / active state */
+.ai-voice-active {
+    color: var(--ai-error) !important;
+    border-color: var(--ai-error) !important;
+    background: rgba(239, 68, 68, 0.1) !important;
+    animation: ai-voice-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ai-voice-pulse {
+    0%,  100% { box-shadow: 0 0 0 0   rgba(239, 68, 68, 0.25); }
+    50%        { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);    }
+}
+
+/* ── Feature 17: TTS Button ───────────────────────────────────────────── */
+.ai-tts-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    opacity: 0.45;
+    transition: opacity 0.12s;
+    float: right;
+    margin-top: -2px;
+    margin-left: 4px;
+    line-height: 1;
+}
+
+.ai-tts-btn:hover { opacity: 1; }
+
 /* Sidebar hidden state */
 .ai-sidebar-hidden .ai-chat-sidebar {
     display: none !important;
