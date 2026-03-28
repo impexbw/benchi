@@ -127,9 +127,10 @@ class AnalyzeImageTool(BaseTool):
         if account_id:
             headers["chatgpt-account-id"] = account_id
 
-        # Use the Codex Responses API with image input
+        # Use the ChatGPT Responses API (NOT Codex) with a vision-capable model
+        # Codex models don't support images — we use gpt-5.2 which does
         payload = {
-            "model": "gpt-5.1-codex-mini",
+            "model": "gpt-5.2",
             "input": [
                 {
                     "role": "user",
@@ -137,7 +138,7 @@ class AnalyzeImageTool(BaseTool):
                         {"type": "input_text", "text": prompt},
                         {
                             "type": "input_image",
-                            "image_url": f"data:image/png;base64,{image_base64}",
+                            "image_url": f"data:image/jpeg;base64,{image_base64}",
                         },
                     ],
                 }
