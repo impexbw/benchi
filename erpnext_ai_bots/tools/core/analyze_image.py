@@ -59,30 +59,48 @@ class AnalyzeImageTool(BaseTool):
 
     def _get_image_base64(self, image_url):
         """Read the image file and return base64-encoded data."""
+        import os
+
         try:
-            # Handle relative URLs
+            # Try to find the file via Frappe's File doctype first
+            file_doc = frappe.get_all(
+                "File",
+                filters={"file_url": image_url},
+                fields=["name", "file_url", "is_private"],
+                limit_page_length=1,
+            )
+            if file_doc:
+                # Use Frappe's get_content to read the file properly
+                doc = frappe.get_doc("File", file_doc[0]["name"])
+                content = doc.get_content()
+                if content:
+                    if isinstance(content, str):
+                        content = content.encode("latin-1")
+                    return base64.b64encode(content).decode("ascii")
+
+            # Fallback: try reading from disk directly
             if image_url.startswith("/"):
-                # Read from Frappe's file system
-                file_path = frappe.utils.get_site_path(
-                    image_url.lstrip("/")
-                )
-                import os
-                if not os.path.exists(file_path):
-                    # Try with 'private' prefix
-                    file_path = frappe.utils.get_site_path(
-                        "private", "files",
-                        image_url.split("/files/")[-1] if "/files/" in image_url else ""
-                    )
-                if os.path.exists(file_path):
-                    with open(file_path, "rb") as f:
-                        return base64.b64encode(f.read()).decode("ascii")
-            else:
-                # Absolute URL — download it
+                # Extract filename
+                filename = image_url.split("/files/")[-1] if "/files/" in image_url else ""
+                if filename:
+                    # Try private files
+                    path = frappe.utils.get_site_path("private", "files", filename)
+                    if os.path.exists(path):
+                        with open(path, "rb") as f:
+                            return base64.b64encode(f.read()).decode("ascii")
+                    # Try public files
+                    path = frappe.utils.get_site_path("public", "files", filename)
+                    if os.path.exists(path):
+                        with open(path, "rb") as f:
+                            return base64.b64encode(f.read()).decode("ascii")
+
+            # Absolute URL — download it
+            if image_url.startswith("http"):
                 resp = requests.get(image_url, timeout=15)
                 if resp.status_code == 200:
                     return base64.b64encode(resp.content).decode("ascii")
-        except Exception:
-            pass
+        except Exception as e:
+            frappe.log_error(title="Image read failed", message=f"{image_url}: {e}")
         return None
 
     def _call_vision_api(self, image_base64, prompt):
