@@ -109,7 +109,11 @@ class RawSQLTool(BaseTool):
 
         try:
             if use_custom:
-                rows = _execute_with_custom_db(query, limit)
+                try:
+                    rows = _execute_with_custom_db(query, limit)
+                except Exception:
+                    # Custom DB failed — fall back to Frappe's connection
+                    rows = _execute_with_frappe_db(query, limit)
             else:
                 rows = _execute_with_frappe_db(query, limit)
         except Exception as exc:
@@ -117,7 +121,6 @@ class RawSQLTool(BaseTool):
                 title="core.raw_sql execution error",
                 message=frappe.get_traceback(),
             )
-            # Return a safe, non-leaking error message
             return {
                 "error": f"Query failed: {type(exc).__name__}: {exc}",
                 "rows": [],
