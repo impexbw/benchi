@@ -131,6 +131,7 @@ class AnalyzeImageTool(BaseTool):
         # Codex models don't support images — we use gpt-5.2 which does
         payload = {
             "model": "gpt-5.2",
+            "instructions": "You are a helpful assistant that can analyze images in detail.",
             "input": [
                 {
                     "role": "user",
@@ -156,12 +157,15 @@ class AnalyzeImageTool(BaseTool):
         )
 
         if resp.status_code != 200:
-            raise Exception(f"Vision API returned {resp.status_code}")
+            raise Exception(f"Vision API returned {resp.status_code}: {resp.text[:200]}")
 
-        # Parse SSE stream for text
+        # Parse SSE stream for text (handle both bytes and str)
         full_text = ""
-        for line in resp.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data: "):
+        for line_bytes in resp.iter_lines():
+            if not line_bytes:
+                continue
+            line = line_bytes.decode("utf-8") if isinstance(line_bytes, bytes) else line_bytes
+            if not line.startswith("data: "):
                 continue
             data_str = line[6:]
             if data_str == "[DONE]":
