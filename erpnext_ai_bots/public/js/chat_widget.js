@@ -120,6 +120,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._active_category = "All";   // sidebar filter tab
         this._all_sessions = [];         // cached sessions array
         this._ctx_menu_target = null;    // session id under context menu
+        this._last_message = null;       // last sent message text, for retry
         this.render();
         this.bind_events();
         this._load_last_session();
@@ -424,7 +425,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.stream_handler = null;
             this.is_streaming = false;
             this.$panel.find(".ai-chat-send").prop("disabled", false);
-            if (this.$thinking) { this.$thinking.remove(); this.$thinking = null; }
+            this._remove_status_indicators();
 
             // When the old session finishes, show a notification and refresh sidebar
             if (old_handler) {
@@ -446,7 +447,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this._cleanup_stream();
         }
 
-        if (this.$thinking) { this.$thinking.remove(); this.$thinking = null; }
+        this._remove_status_indicators();
 
         try {
             const r = await frappe.call({
@@ -689,14 +690,13 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.add_message("user", message);
         }
         this.is_streaming = true;
+        this._last_message = message;
         this.$panel.find(".ai-chat-send").prop("disabled", true);
 
-        // Create a lightweight thinking indicator (not inside a message card)
+        // Remove any leftover status indicators and show THINKING state
+        this._remove_status_indicators();
         this.current_message_text = "";
-        this._thinking_steps = [];
-        this.$thinking = $('<div class="ai-thinking-inline"><span class="ai-thinking-dot"></span> Thinking...</div>');
-        this.$messages.append(this.$thinking);
-        this._scroll_bottom();
+        this._show_thinking();
         // The real bot message bubble will be created when first text chunk arrives
         this.$current_message = null;
 
@@ -729,15 +729,13 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 if (this.is_streaming) {
                     this._finish_streaming();
                     if (!this.current_message_text) {
-                        const $err = this.add_message("assistant", "No response received. The server may be busy — please try again.");
-                        $err.addClass("ai-msg-error");
+                        this._show_error("No response received — the server may be busy");
                     }
                 }
             }, 120000);
         } catch (err) {
             this._finish_streaming();
-            const $err = this.add_message("assistant", "Something went wrong. Please try again.");
-            $err.addClass("ai-msg-error");
+            this._show_error("Something went wrong — please try again");
         }
     }
 
@@ -854,11 +852,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 onChunk: (text) => {
                     // Create bot bubble on first chunk if it doesn't exist yet
                     if (!this.$current_message) {
-                        // Remove inline thinking indicator
-                        if (this.$thinking) {
-                            this.$thinking.remove();
-                            this.$thinking = null;
-                        }
+                        // Remove thinking indicator — response has started
+                        this._remove_status_indicators();
                         this.$current_message = this.add_message("assistant", "");
                     }
                     this.current_message_text += text;
@@ -868,24 +863,18 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     this._scroll_bottom();
                 },
                 onToolStart: (tool) => {
-                    // Update the inline thinking indicator with tool steps
-                    if (!this._thinking_steps.includes(tool)) {
-                        this._thinking_steps.push(tool);
-                    }
-                    if (this.$thinking) {
-                        this.$thinking.html(
-                            this._thinking_steps.map(s =>
-                                `<span class="ai-thinking-dot"></span> ${s}...`
-                            ).join("<br>")
-                        );
-                        this._scroll_bottom();
-                    }
+                    // Update status text to show which tool is running
+                    this._update_status_text(tool);
                 },
                 onToolResult: () => {
-                    // no-op — inline thinking handles display
+                    // no-op
                 },
                 onDone: () => {
                     this._finish_streaming();
+                    // Add delivered tick to the bot message
+                    if (this.$current_message) {
+                        this._add_delivered_tick(this.$current_message);
+                    }
                     // Refresh sidebar after response so message counts update
                     if (this.is_expanded) {
                         this._load_sessions_list();
@@ -893,8 +882,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 },
                 onError: (error) => {
                     this._finish_streaming();
-                    const $err = this.add_message("assistant", `**Error:** ${error}`);
-                    $err.addClass("ai-msg-error");
+                    this._show_error("Something went wrong — please try again");
                 },
             }
         );
@@ -902,12 +890,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     _finish_streaming() {
         this.is_streaming = false;
-        // Remove inline thinking indicator
-        if (this.$thinking) {
-            this.$thinking.remove();
-            this.$thinking = null;
-        }
-        // Cancel any pending tool-hide delay and hide immediately
+        // Remove any status indicators still showing
+        this._remove_status_indicators();
+        // Cancel any pending tool-hide delay and hide tool indicator bar
         clearTimeout(this._tool_hide_timeout);
         this._tool_hide_timeout = null;
         this.$tool_indicator.hide();
@@ -917,14 +902,77 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this._stream_timeout = null;
         }
         if (this.$current_message) {
-            // Stop thinking dots animation
-            this.$current_message.find(".ai-thinking-block").addClass("ai-thinking-done");
             // Apply data-result class if the message contains a table
             if (this.$current_message.find("table").length) {
                 this.$current_message.addClass("ai-msg-data");
             }
         }
         this._cleanup_stream();
+    }
+
+    // ── Status indicators ─────────────────────────────────────────────
+
+    /** Show the animated 3-dot THINKING indicator below the user's message. */
+    _show_thinking() {
+        this.$status_indicator = $(`
+            <div class="ai-status-indicator ai-status-thinking">
+                <div class="ai-bounce-loader">
+                    <span></span><span></span><span></span>
+                </div>
+                <span class="ai-status-text">Processing...</span>
+            </div>
+        `);
+        this.$messages.append(this.$status_indicator);
+        this._scroll_bottom();
+    }
+
+    /** Update the status text while a tool is running. */
+    _update_status_text(tool_name) {
+        if (this.$status_indicator && this.$status_indicator.hasClass("ai-status-thinking")) {
+            this.$status_indicator.find(".ai-status-text").text(tool_name + "...");
+            this._scroll_bottom();
+        }
+    }
+
+    /** Remove all status indicators (thinking + error) from the message list. */
+    _remove_status_indicators() {
+        this.$messages.find(".ai-status-indicator").remove();
+        this.$status_indicator = null;
+    }
+
+    /**
+     * Show the ERROR indicator with a Retry button.
+     * @param {string} msg - User-friendly error message (no technical jargon).
+     */
+    _show_error(msg) {
+        // Remove any thinking indicator first
+        this._remove_status_indicators();
+
+        this.$status_indicator = $(`
+            <div class="ai-status-indicator ai-status-error">
+                <span class="ai-error-icon">!</span>
+                <span class="ai-status-text">${frappe.utils.escape_html(msg)}</span>
+                <button class="ai-retry-btn">Retry</button>
+            </div>
+        `);
+
+        this.$status_indicator.find(".ai-retry-btn").on("click", () => {
+            this._remove_status_indicators();
+            if (this._last_message) {
+                this.send(this._last_message);
+            }
+        });
+
+        this.$messages.append(this.$status_indicator);
+        this._scroll_bottom();
+    }
+
+    /**
+     * Append a green delivered tick to the given bot message element.
+     * @param {jQuery} $msg
+     */
+    _add_delivered_tick($msg) {
+        $msg.append('<span class="ai-delivered-tick" title="Delivered">&#10003;</span>');
     }
 
     _cleanup_stream() {

@@ -609,53 +609,97 @@
     border-radius: 4px;
 }
 
-/* ── Inline thinking indicator (NOT inside a message card) ────────────── */
-.ai-thinking-inline {
+/* ── Status indicator — 3 states: thinking, error, delivered ─────────── */
+
+/* Shared container */
+.ai-status-indicator {
     align-self: flex-start;
-    padding: 6px 0;
-    font-size: 13px;
-    font-style: italic;
-    color: var(--ai-accent, #6c5ce7);
-    line-height: 1.8;
-}
-
-/* ── Thinking block — accumulated steps shown above response ──────────── */
-.ai-thinking-block {
-    padding-bottom: 4px;
-    margin-bottom: 6px;
-}
-
-.ai-thinking-step {
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: var(--ai-accent, #6c5ce7);
+    gap: 10px;
+    padding: 8px 14px;
+    border-radius: 12px;
     font-size: 13px;
-    font-style: italic;
-    padding: 3px 0;
+    margin: 4px 0;
 }
 
-/* Dots pulse only while thinking — stop once response arrives */
-.ai-thinking-dot {
-    display: inline-block;
+/* State A: THINKING */
+.ai-status-thinking {
+    color: var(--ai-accent, #6c5ce7);
+    background: rgba(108, 92, 231, 0.08);
+}
+
+/* 3-dot bounce loader */
+.ai-bounce-loader {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.ai-bounce-loader span {
     width: 8px;
     height: 8px;
     background: var(--ai-accent, #6c5ce7);
     border-radius: 50%;
-    animation: ai-pulse 1.2s ease-in-out infinite;
+    animation: ai-bounce 1.4s ease-in-out infinite;
+}
+
+.ai-bounce-loader span:nth-child(2) { animation-delay: 0.2s; }
+.ai-bounce-loader span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ai-bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40%            { transform: scale(1);   opacity: 1; }
+}
+
+/* State B: ERROR */
+.ai-status-error {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.ai-error-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ef4444;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
     flex-shrink: 0;
 }
 
-/* When response text has arrived, stop the pulsing */
-.ai-thinking-done .ai-thinking-dot {
-    animation: none;
-    opacity: 0.5;
-    flex-shrink: 0;
+.ai-retry-btn {
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-left: auto;
+    white-space: nowrap;
 }
 
-@keyframes ai-pulse {
-    0%, 100% { opacity: 0.3; transform: scale(0.8); }
-    50%       { opacity: 1;   transform: scale(1.2); }
+.ai-retry-btn:hover {
+    background: #dc2626;
+}
+
+/* State C: DELIVERED tick — appended inside the bot message bubble */
+.ai-delivered-tick {
+    display: inline-block;
+    color: #22c55e;
+    font-size: 14px;
+    font-weight: 700;
+    margin-left: 6px;
+    opacity: 0.7;
+    vertical-align: middle;
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────── */
