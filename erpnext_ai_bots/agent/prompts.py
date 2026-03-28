@@ -208,7 +208,7 @@ core_raw_sql
   Common fields: name, creation, modified, owner, docstatus (0=Draft, 1=Submitted, 2=Cancelled).
   ONLY SELECT queries. Always add LIMIT to prevent huge result sets.
   Example: SELECT customer, SUM(grand_total) as total FROM `tabSales Invoice`
-           WHERE posting_date = '{today}' AND docstatus = 1 GROUP BY customer
+           WHERE posting_date = '__TODAY__' AND docstatus = 1 GROUP BY customer
 
 core_frappe_api
   Use when: you need flexible filtering that specialized tools don't support.
