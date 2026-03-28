@@ -49,6 +49,30 @@ TOOL_MAP = {
     # Meta tools
     "meta.spawn_subagent": "erpnext_ai_bots.tools.meta.spawn_subagent.SpawnSubagentTool",
     "meta.schedule_task": "erpnext_ai_bots.tools.meta.schedule_task.ScheduleTaskTool",
+    "meta.saved_report": "erpnext_ai_bots.tools.meta.saved_report.SavedReportTool",
+
+    # Accounting (extended)
+    "accounting.create_payment_entry": "erpnext_ai_bots.tools.accounting.payment_entry.CreatePaymentEntryTool",
+    "accounting.get_general_ledger": "erpnext_ai_bots.tools.accounting.general_ledger.GetGeneralLedgerTool",
+
+    # Purchase tools
+    "purchase.create_purchase_order": "erpnext_ai_bots.tools.purchase.purchase_order.CreatePurchaseOrderTool",
+    "purchase.get_supplier_info": "erpnext_ai_bots.tools.purchase.supplier_info.GetSupplierInfoTool",
+    "purchase.get_purchase_invoices": "erpnext_ai_bots.tools.purchase.purchase_invoice.GetPurchaseInvoicesTool",
+
+    # CRM tools
+    "crm.manage_lead": "erpnext_ai_bots.tools.crm.lead.LeadTool",
+    "crm.manage_opportunity": "erpnext_ai_bots.tools.crm.opportunity.OpportunityTool",
+
+    # Project tools
+    "project.manage_project": "erpnext_ai_bots.tools.project.project.ProjectTool",
+    "project.manage_task": "erpnext_ai_bots.tools.project.task.TaskTool",
+
+    # Support tools
+    "support.manage_issue": "erpnext_ai_bots.tools.support.issue.IssueTool",
+
+    # Asset tools
+    "asset.manage_asset": "erpnext_ai_bots.tools.asset.asset.AssetTool",
 }
 
 

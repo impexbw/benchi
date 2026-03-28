@@ -109,6 +109,18 @@ class StreamBridge:
             "core.read_file": "Reading file",
             "meta.spawn_subagent": "Working on complex task",
             "meta.schedule_task": "Setting up scheduled task",
+            "meta.saved_report": "Managing saved reports",
+            "accounting.create_payment_entry": "Creating payment entry",
+            "accounting.get_general_ledger": "Fetching general ledger",
+            "purchase.create_purchase_order": "Creating purchase order",
+            "purchase.get_supplier_info": "Looking up supplier info",
+            "purchase.get_purchase_invoices": "Fetching purchase invoices",
+            "crm.manage_lead": "Managing lead",
+            "crm.manage_opportunity": "Managing opportunity",
+            "project.manage_project": "Managing project",
+            "project.manage_task": "Managing task",
+            "support.manage_issue": "Managing support issue",
+            "asset.manage_asset": "Looking up asset info",
         }
         return friendly.get(tool_name, f"Looking up {tool_name.split('.')[-1].replace('_', ' ')}")
 

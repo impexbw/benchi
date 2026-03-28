@@ -41,7 +41,31 @@ TOOL_PERMISSION_MAP = {
     "sales.get_revenue_summary": ("read", "Sales Invoice"),
 
     "meta.spawn_subagent": (None, None),
-    "meta.schedule_task": (None, None),  # Meta tool, no DocType permission
+    "meta.schedule_task": (None, None),
+    "meta.saved_report": (None, None),  # Owner-scoped, no DocType permission check here
+
+    # Accounting (extended)
+    "accounting.create_payment_entry": ("create", "Payment Entry"),
+    "accounting.get_general_ledger": ("read", "GL Entry"),
+
+    # Purchase tools
+    "purchase.create_purchase_order": ("create", "Purchase Order"),
+    "purchase.get_supplier_info": ("read", "Supplier"),
+    "purchase.get_purchase_invoices": ("read", "Purchase Invoice"),
+
+    # CRM tools
+    "crm.manage_lead": ("read", "Lead"),
+    "crm.manage_opportunity": ("read", "Opportunity"),
+
+    # Project tools
+    "project.manage_project": ("read", "Project"),
+    "project.manage_task": ("read", "Task"),
+
+    # Support tools
+    "support.manage_issue": ("read", "Issue"),
+
+    # Asset tools
+    "asset.manage_asset": ("read", "Asset"),
 }
 
 

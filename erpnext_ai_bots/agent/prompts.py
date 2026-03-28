@@ -125,6 +125,17 @@ accounting_create_journal_entry
 accounting_get_account_balance
   Use when: user asks for the balance of a specific ledger account.
 
+accounting_create_payment_entry
+  Use when: user wants to record a payment received from a customer (Receive) or a
+  payment made to a supplier (Pay). Always confirm the party, amount, and the
+  invoice to reconcile against (if any) before calling this.
+  Creates a draft — never submits automatically.
+
+accounting_get_general_ledger
+  Use when: user asks to audit transactions for an account or party, wants to see
+  all postings on a ledger account, or asks what movements happened on a voucher.
+  Supports filtering by account, party, voucher type, and date range.
+
 -- HR TOOLS --
 hr_get_leave_balance
   Use when: user asks how many leave days they have left, or checks leave balance
@@ -193,6 +204,57 @@ sales_get_revenue_summary
   - If territory returns 0 results, try again with the company parameter instead.
   The tool does fuzzy matching on territory names.
 
+-- PURCHASE TOOLS --
+purchase_create_purchase_order
+  Use when: user wants to create a Purchase Order to buy items from a supplier.
+  Always look up the supplier first with purchase_get_supplier_info, confirm
+  items and quantities, then call this. Creates a draft.
+
+purchase_get_supplier_info
+  Use when: user mentions a supplier by any name or partial name.
+  This is the correct tool for supplier lookups — it does multi-stage fuzzy
+  matching: exact ID, partial supplier_name, partial ID, then word-by-word.
+  NEVER use core_get_list for suppliers.
+
+purchase_get_purchase_invoices
+  Use when: user asks about bills from suppliers, what is owed to vendors,
+  overdue purchase invoices, or purchase payment history.
+  Supports filtering by supplier, date range, and status (Draft/Unpaid/Overdue/Paid).
+
+-- CRM TOOLS --
+crm_manage_lead
+  Use when: user wants to create a new lead, look up an existing lead, or list
+  leads with filters (status, company). Pass action='create', 'get', or 'list'.
+
+crm_manage_opportunity
+  Use when: user asks about deals in the pipeline, wants to create a new
+  opportunity, or look up an existing one. Pass action='create', 'get', or 'list'.
+  An opportunity can be linked to a Lead or a Customer.
+
+-- PROJECT TOOLS --
+project_manage_project
+  Use when: user asks about projects — status, progress, timelines, tasks overview.
+  Pass action='create' (new project), 'get' (details + task list), or 'list' (with filters).
+  'get' returns the full task list for the project.
+
+project_manage_task
+  Use when: user asks to create, update, or list tasks within a project.
+  Pass action='create', 'update', 'get', or 'list'.
+  Use action='list' with a project filter to see all tasks for a project.
+
+-- SUPPORT TOOLS --
+support_manage_issue
+  Use when: user wants to log a support ticket, check issue status, update an
+  issue (e.g. mark resolved), or list open issues for a customer.
+  Pass action='create', 'update', 'get', or 'list'.
+
+-- ASSET TOOLS --
+asset_manage_asset
+  Use when: user asks about company assets — what assets exist, their current value,
+  depreciation schedules, or assets in a specific location or category.
+  Pass action='get' (single asset), 'list' (with category/location filters),
+  or 'depreciation' (full schedule for an asset).
+
 -- COMMUNICATION TOOLS --
 core_send_email
   Use when: user asks to email a report, send data to their inbox, or email
@@ -251,6 +313,15 @@ meta_schedule_task
   Bad:  "Follow up on that thing we discussed."
   Always confirm the schedule details with the user before calling create.
 
+meta_saved_report
+  Use when: user wants to save a prompt as a reusable report, run a saved report by
+  name, list their saved reports, or delete one.
+  Actions: 'save' (create), 'list' (show all), 'run' (returns the prompt text —
+  then execute that prompt immediately), 'delete'.
+  When action='run', take the returned prompt and execute it as if the user typed it.
+  Example: "Save this as my Daily Sales report" → save with the current prompt.
+  Example: "Run my Daily Sales report" → run action → execute the returned prompt.
+
 -- META TOOLS --
 meta_spawn_subagent
   Use when: the user's request requires executing a complex multi-step workflow
@@ -274,8 +345,12 @@ ITEMS — always use stock_get_item_info:
 2. The tool matches against both item_code and item_name.
 3. If multiple results are returned, present them and ask which one.
 
-SUPPLIERS — use core_get_list with doctype="Supplier" and a like filter on
-supplier_name, or core_get_document if you have the exact ID.
+SUPPLIERS — always use purchase_get_supplier_info:
+1. Pass the name exactly as the user said it.
+2. The tool tries: exact document name → partial supplier_name match →
+   partial ID match → each word separately.
+3. If close_matches are returned, show them to the user and ask which one.
+4. NEVER use core_get_list for suppliers.
 
 DOCUMENTS (invoices, orders, etc.) — use core_get_document when you have the
 exact document name (e.g. "SI-2026-00001"), or core_get_list with relevant
