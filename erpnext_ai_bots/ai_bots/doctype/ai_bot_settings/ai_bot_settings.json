@@ -11,6 +11,7 @@
   "license_status",
   "license_last_validated",
   "license_server_url",
+  "accent_color",
   "ai_provider_section",
   "provider",
   "api_key",
@@ -37,7 +38,13 @@
   "allowed_doctypes_section",
   "allowed_read_doctypes",
   "allowed_write_doctypes",
-  "blocked_doctypes"
+  "blocked_doctypes",
+  "db_section",
+  "db_host",
+  "db_port",
+  "db_user",
+  "db_password",
+  "db_name"
  ],
  "fields": [
   {
@@ -81,6 +88,13 @@
    "depends_on": "eval:doc.deployment_mode==='Enterprise'"
   },
   {
+   "default": "#6c5ce7",
+   "description": "Primary accent color for the AI chat interface",
+   "fieldname": "accent_color",
+   "fieldtype": "Color",
+   "label": "Accent Color"
+  },
+  {
    "fieldname": "ai_provider_section",
    "fieldtype": "Section Break",
    "label": "AI Provider"
@@ -91,7 +105,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Provider",
-   "options": "Anthropic\nOpenAI\nCustom"
+   "options": "Anthropic\nOpenAI\nOpenAI (ChatGPT OAuth)\nCustom"
   },
   {
   "description": "Platform-managed (SaaS) or your own key (Enterprise BYOK)",
@@ -120,7 +134,7 @@
   {
    "fieldname": "oauth_section",
    "fieldtype": "Section Break",
-   "label": "OAuth (for IdP auth)"
+   "label": "OAuth / ChatGPT Connection"
   },
   {
    "default": "0",
@@ -238,13 +252,46 @@
    "fieldname": "blocked_doctypes",
    "fieldtype": "Small Text",
    "label": "Blocked DocTypes"
+  },
+  {
+   "fieldname": "db_section",
+   "fieldtype": "Section Break",
+   "label": "Database Connection (Optional)",
+   "description": "Leave blank to use the default Frappe DB connection. Fill in only when raw_sql should connect to a separate database."
+  },
+  {
+   "default": "localhost",
+   "fieldname": "db_host",
+   "fieldtype": "Data",
+   "label": "DB Host"
+  },
+  {
+   "default": "3306",
+   "fieldname": "db_port",
+   "fieldtype": "Data",
+   "label": "DB Port"
+  },
+  {
+   "fieldname": "db_user",
+   "fieldtype": "Data",
+   "label": "DB Username"
+  },
+  {
+   "fieldname": "db_password",
+   "fieldtype": "Password",
+   "label": "DB Password"
+  },
+  {
+   "fieldname": "db_name",
+   "fieldtype": "Data",
+   "label": "Database Name"
   }
  ],
  "issingle": 1,
  "links": [],
  "modified": "2026-03-26 00:00:00.000000",
  "modified_by": "Administrator",
- "module": "ERPNext AI Bots",
+ "module": "AI Bots",
  "name": "AI Bot Settings",
  "owner": "Administrator",
  "permissions": [

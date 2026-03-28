@@ -1,6 +1,5 @@
 import frappe
 import json
-import anthropic
 from erpnext_ai_bots.tools.registry import ToolRegistry
 from erpnext_ai_bots.agent.prompts import get_subagent_prompt
 
@@ -25,6 +24,13 @@ class SubagentSpawner:
         self.stream_bridge = stream_bridge
         self.max_depth = max_depth
         self.current_depth = current_depth
+
+        try:
+            import anthropic
+        except ImportError:
+            frappe.throw(
+                "Anthropic SDK not installed. Run: pip install anthropic"
+            )
 
         settings = frappe.get_cached_doc("AI Bot Settings")
         self.client = anthropic.Anthropic(api_key=settings.get_password("api_key"))

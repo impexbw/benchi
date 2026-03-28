@@ -11,6 +11,8 @@
   "company",
   "status",
   "title",
+  "category",
+  "pinned",
   "conversation_section",
   "messages_json",
   "message_count",
@@ -59,6 +61,20 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Title"
+  },
+  {
+   "default": "General",
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "General\nFinance\nSales\nStock\nHR"
+  },
+  {
+   "default": "0",
+   "fieldname": "pinned",
+   "fieldtype": "Check",
+   "label": "Pinned"
   },
   {
    "fieldname": "conversation_section",
@@ -143,7 +159,7 @@
  "links": [],
  "modified": "2026-03-26 00:00:00.000000",
  "modified_by": "Administrator",
- "module": "ERPNext AI Bots",
+ "module": "AI Bots",
  "name": "AI Chat Session",
  "owner": "Administrator",
  "permissions": [

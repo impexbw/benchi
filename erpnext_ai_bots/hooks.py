@@ -2,7 +2,7 @@ app_name = "erpnext_ai_bots"
 app_title = "ERPNext AI Bots"
 app_publisher = "Benchi"
 app_description = "AI Agent platform for ERPNext — Commercial Edition (SaaS + Enterprise licensing)"
-app_version = "1.0.0"
+app_version = "1.1.0"
 app_icon = "octicon octicon-hubot"
 app_color = "#6c5ce7"
 app_email = "info@benchi.io"
@@ -13,12 +13,16 @@ required_apps = ["frappe", "erpnext"]
 app_include_js = [
     "/assets/erpnext_ai_bots/js/chat_stream.js",
     "/assets/erpnext_ai_bots/js/chat_widget.js",
+    "/assets/erpnext_ai_bots/js/openai_oauth.js",
 ]
-app_include_css = "/assets/erpnext_ai_bots/css/chat_widget.css"
+app_include_css = [
+    "/assets/erpnext_ai_bots/css/chat_widget.css",
+    "/assets/erpnext_ai_bots/css/openai_oauth.css",
+]
 
 # DocType permissions
 has_permission = {
-    "AI Chat Session": "erpnext_ai_bots.doctype.ai_chat_session.ai_chat_session.has_permission",
+    "AI Chat Session": "erpnext_ai_bots.ai_bots.doctype.ai_chat_session.ai_chat_session.has_permission",
 }
 
 # Scheduled tasks
@@ -31,6 +35,9 @@ scheduler_events = {
         "erpnext_ai_bots.billing.metering.aggregate_daily_usage",
     ],
     "cron": {
+        "*/15 * * * *": [
+            "erpnext_ai_bots.utils.task_runner.run_scheduled_tasks",
+        ],
         "0 0 1 * *": [
             "erpnext_ai_bots.billing.metering.reset_monthly_counters",
         ],

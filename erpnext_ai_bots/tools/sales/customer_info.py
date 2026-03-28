@@ -5,10 +5,13 @@ from erpnext_ai_bots.tools.base import BaseTool
 class GetCustomerInfoTool(BaseTool):
     name = "sales.get_customer_info"
     description = (
-        "Retrieve customer details from ERPNext. "
-        "When a specific customer name is provided, returns full details for that customer "
-        "including outstanding balance. "
-        "Without a customer name, lists up to 20 customers optionally filtered by customer group."
+        "Look up a customer by name with smart fuzzy matching. "
+        "Pass any part of the customer name or ID — the tool searches by exact match, "
+        "partial match on customer_name, partial match on ID, and individual words. "
+        "Returns full customer details including outstanding balance. "
+        "If multiple matches are found, returns a list of close matches to choose from. "
+        "Without a customer name, lists up to 20 customers optionally filtered by customer group. "
+        "ALWAYS use this tool when looking for a customer — do NOT use core_get_list for customers."
     )
     parameters = {
         "customer": {
@@ -48,14 +51,53 @@ class GetCustomerInfoTool(BaseTool):
             if frappe.db.exists("Customer", customer):
                 doc = frappe.get_doc("Customer", customer)
             else:
+                # Try fuzzy match on customer_name first
                 matches = frappe.get_all(
                     "Customer",
                     filters={"customer_name": ["like", f"%{customer}%"]},
-                    fields=["name"],
-                    limit_page_length=1,
+                    fields=["name", "customer_name"],
+                    limit_page_length=5,
                 )
+                # Also try matching on the document name (ID)
                 if not matches:
-                    return {"customer": None, "message": f"No customer found matching '{customer}'."}
+                    matches = frappe.get_all(
+                        "Customer",
+                        filters={"name": ["like", f"%{customer}%"]},
+                        fields=["name", "customer_name"],
+                        limit_page_length=5,
+                    )
+                # Try each word separately if full string didn't match
+                if not matches and " " in customer:
+                    for word in customer.split():
+                        if len(word) < 3:
+                            continue
+                        matches = frappe.get_all(
+                            "Customer",
+                            filters=[
+                                ["customer_name", "like", f"%{word}%"],
+                            ],
+                            fields=["name", "customer_name"],
+                            limit_page_length=5,
+                        )
+                        if not matches:
+                            matches = frappe.get_all(
+                                "Customer",
+                                filters=[
+                                    ["name", "like", f"%{word}%"],
+                                ],
+                                fields=["name", "customer_name"],
+                                limit_page_length=5,
+                            )
+                        if matches:
+                            break
+                if not matches:
+                    return {"customer": None, "message": f"No customer found matching '{customer}'. Try a different name or spelling."}
+                if len(matches) > 1:
+                    return {
+                        "customer": None,
+                        "close_matches": [{"id": m["name"], "name": m.get("customer_name", m["name"])} for m in matches],
+                        "message": f"Multiple customers match '{customer}'. Which one did you mean?",
+                    }
                 doc = frappe.get_doc("Customer", matches[0]["name"])
 
             outstanding_amount = self._get_outstanding_amount(doc.name)

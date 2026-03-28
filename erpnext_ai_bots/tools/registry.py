@@ -11,6 +11,9 @@ TOOL_MAP = {
     "core.update_document": "erpnext_ai_bots.tools.core.update_document.UpdateDocumentTool",
     "core.submit_document": "erpnext_ai_bots.tools.core.submit_document.SubmitDocumentTool",
     "core.run_report": "erpnext_ai_bots.tools.core.run_report.RunReportTool",
+    "core.raw_sql": "erpnext_ai_bots.tools.core.raw_sql.RawSQLTool",
+    "core.frappe_api": "erpnext_ai_bots.tools.core.frappe_api.FrappeAPITool",
+    "core.send_email": "erpnext_ai_bots.tools.core.send_email.SendEmailTool",
 
     # Accounting tools
     "accounting.get_trial_balance": "erpnext_ai_bots.tools.accounting.trial_balance.GetTrialBalanceTool",
@@ -43,6 +46,7 @@ TOOL_MAP = {
 
     # Meta tools
     "meta.spawn_subagent": "erpnext_ai_bots.tools.meta.spawn_subagent.SpawnSubagentTool",
+    "meta.schedule_task": "erpnext_ai_bots.tools.meta.schedule_task.ScheduleTaskTool",
 }
 
 
@@ -73,12 +77,52 @@ class ToolRegistry:
         return self._cache[namespaced_name]
 
     def get_all_schemas(self) -> list:
-        """Return tool schemas for ALL registered tools."""
+        """Return tool schemas for ALL registered tools (Anthropic format)."""
         schemas = []
         for namespaced_name in TOOL_MAP:
             tool = self.get_tool(namespaced_name)
             schemas.append(tool.schema())
         return schemas
+
+    def get_openai_schemas(self) -> list:
+        """Return tool schemas for ALL registered tools in OpenAI Responses API format.
+
+        Anthropic format:
+            {"name": "...", "description": "...", "input_schema": {"type": "object", ...}}
+
+        OpenAI Responses API format (NOT Chat Completions):
+            {"type": "function", "name": "...", "description": "...",
+             "parameters": {"type": "object", ...}}
+
+        Note: name, description, parameters are top-level siblings of type,
+        NOT nested inside a "function" key. The Responses API uses a flat structure.
+        Also: dots in names are replaced with underscores (API restriction).
+        """
+        schemas = []
+        for namespaced_name in TOOL_MAP:
+            tool = self.get_tool(namespaced_name)
+            anthropic_schema = tool.schema()
+            # Responses API doesn't allow dots in function names
+            safe_name = anthropic_schema["name"].replace(".", "_")
+            openai_schema = {
+                "type": "function",
+                "name": safe_name,
+                "description": anthropic_schema["description"],
+                "parameters": anthropic_schema["input_schema"],
+            }
+            schemas.append(openai_schema)
+        return schemas
+
+    def get_tool_by_openai_name(self, openai_name: str):
+        """Look up a tool by its OpenAI-safe name (underscores instead of dots)."""
+        # Convert back: core_get_list -> core.get_list
+        dotted_name = openai_name.replace("_", ".", 1)
+        if dotted_name in TOOL_MAP:
+            return self.get_tool(dotted_name)
+        # Fallback: try direct match
+        if openai_name in TOOL_MAP:
+            return self.get_tool(openai_name)
+        raise ValueError(f"Unknown tool: {openai_name}")
 
     def resolve_tool_subset(self, patterns: list) -> list:
         """Resolve glob-like patterns to tool instances.

@@ -9,6 +9,9 @@ TOOL_PERMISSION_MAP = {
     "core.update_document": ("write", None),
     "core.submit_document": ("submit", None),
     "core.run_report": ("read", None),
+    "core.raw_sql": (None, None),   # SQL queries use DB-level auth, not DocType permissions
+    "core.frappe_api": ("read", None),
+    "core.send_email": (None, None),
 
     "accounting.get_trial_balance": ("read", "Account"),
     "accounting.get_outstanding_invoices": ("read", "Sales Invoice"),
@@ -36,6 +39,7 @@ TOOL_PERMISSION_MAP = {
     "sales.get_revenue_summary": ("read", "Sales Invoice"),
 
     "meta.spawn_subagent": (None, None),
+    "meta.schedule_task": (None, None),  # Meta tool, no DocType permission
 }
 
 

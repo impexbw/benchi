@@ -1,6 +1,6 @@
 [project]
 name = "erpnext_ai_bots"
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.10"
 
 [build-system]
