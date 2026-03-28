@@ -2,25 +2,51 @@ import frappe
 from erpnext_ai_bots.agent.context import build_context_snapshot
 
 
+_PROMPT_CACHE_TTL = 300  # 5 minutes
+
+
 def get_system_prompt(user: str, company: str) -> str:
-    """Build the orchestrator system prompt with live company context injected."""
-    user_doc = frappe.get_cached_doc("User", user)
-    user_roles = frappe.get_roles(user)
+    """Build the orchestrator system prompt. Cached for 5 min per user+company."""
+    cache_key = f"ai_oracle_prompt:{user}:{company}"
+    cached = frappe.cache().get_value(cache_key)
+    if cached:
+        # Update only the time portion (cheap)
+        from datetime import timedelta
+        now = frappe.utils.now_datetime()
+        cached = cached.replace("__CURRENT_TIME__", now.strftime("%H:%M:%S"))
+        cached = cached.replace("__CURRENT_DATETIME__", now.strftime("%Y-%m-%d %H:%M:%S"))
+        cached = cached.replace("__TODAY__", frappe.utils.today())
+        cached = cached.replace("__DAY__", now.strftime("%A"))
+        cached = cached.replace("__IN5MIN__", (now + timedelta(minutes=5)).strftime("%H:%M"))
+        cached = cached.replace("__TOMORROW__", (now + timedelta(days=1)).strftime("%Y-%m-%d"))
+        return cached
+
+    prompt = _build_system_prompt_uncached(user, company)
+    frappe.cache().set_value(cache_key, prompt, expires_in_sec=_PROMPT_CACHE_TTL)
+
+    # Replace time placeholders with actual values
     from datetime import timedelta
     now = frappe.utils.now_datetime()
-    today = frappe.utils.today()
-    current_time = now.strftime("%H:%M:%S")
-    current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-    day_of_week = now.strftime("%A")
-    in_5_min = (now + timedelta(minutes=5)).strftime("%H:%M")
-    tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    prompt = prompt.replace("__CURRENT_TIME__", now.strftime("%H:%M:%S"))
+    prompt = prompt.replace("__CURRENT_DATETIME__", now.strftime("%Y-%m-%d %H:%M:%S"))
+    prompt = prompt.replace("__TODAY__", frappe.utils.today())
+    prompt = prompt.replace("__DAY__", now.strftime("%A"))
+    prompt = prompt.replace("__IN5MIN__", (now + timedelta(minutes=5)).strftime("%H:%M"))
+    prompt = prompt.replace("__TOMORROW__", (now + timedelta(days=1)).strftime("%Y-%m-%d"))
+    return prompt
+
+
+def _build_system_prompt_uncached(user: str, company: str) -> str:
+    """Build the full system prompt (expensive — cached by caller)."""
+    user_doc = frappe.get_cached_doc("User", user)
+    user_roles = frappe.get_roles(user)
 
     # Build the live snapshot. Failures inside are caught per-section.
     try:
         context_block = build_context_snapshot(company)
     except Exception:
         frappe.log_error(title="Oracle context assembly failed", message=frappe.get_traceback())
-        context_block = f"COMPANY SNAPSHOT: (unavailable — context assembly failed)\nDate: {today}"
+        context_block = "COMPANY SNAPSHOT: (unavailable)"
 
     return f"""
 === IDENTITY ===
@@ -32,18 +58,16 @@ access to all company data.
 WHO YOU ARE TALKING TO:
 - Name: {user_doc.full_name}
 - Roles: {', '.join(user_roles)}
-- Date: {today} ({day_of_week})
-- Time: {current_time}
-- DateTime: {current_datetime}
+- Date: __TODAY__ (__DAY__)
+- Time: __CURRENT_TIME__
+- DateTime: __CURRENT_DATETIME__
 
-IMPORTANT — TIME AWARENESS:
-You know the exact current date and time. When the user says relative times:
-- "in 5 minutes" → trigger_time = {in_5_min}, trigger_date = {today}
-- "in 2 hours" → calculate trigger_time from current time {current_time}
-- "tomorrow" → trigger_date = {tomorrow}
-- "next Monday" → calculate the exact date of next Monday from {today}
-Always convert relative times to absolute trigger_date (YYYY-MM-DD) and
-trigger_time (HH:MM) when creating scheduled tasks.
+TIME AWARENESS:
+When the user says relative times, convert to absolute:
+- "in 5 minutes" → trigger_time = __IN5MIN__, trigger_date = __TODAY__
+- "tomorrow" → trigger_date = __TOMORROW__
+- "next Monday" → calculate from __TODAY__
+Always use trigger_date (YYYY-MM-DD) and trigger_time (HH:MM).
 
 === LIVE CONTEXT ===
 {context_block}
