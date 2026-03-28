@@ -64,13 +64,12 @@ class Orchestrator:
         # 1. Prompt injection defense
         check_prompt_injection(user_message)
 
-        # 2. Append user message — store as multimodal content when an image is present
-        msg_content = user_message
+        # 2. If an image is attached, include the URL in the text so the AI
+        #    knows to call core_analyze_image. We don't send the image inline
+        #    because private files can't be downloaded by the external API.
         if image_url:
-            msg_content = {
-                "text": user_message,
-                "image_url": image_url,
-            }
+            user_message = f"[Image attached at: {image_url}] {user_message}\n\nUse the core_analyze_image tool with image_url=\"{image_url}\" to analyze this image."
+        msg_content = user_message
 
         self.messages.append({
             "role": "user",
@@ -234,17 +233,6 @@ class Orchestrator:
         for msg in self.messages[-20:]:
             role = msg["role"]
             content = msg.get("content", "")
-
-            # Multimodal message with image (stored as a dict with text + image_url)
-            if isinstance(content, dict) and content.get("image_url"):
-                api_messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": content.get("text", "Describe this image")},
-                        {"type": "input_image", "image_url": content["image_url"]},
-                    ],
-                })
-                continue
 
             if isinstance(content, list):
                 # Skip turns that contain function_call_output items
