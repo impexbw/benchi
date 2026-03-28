@@ -146,7 +146,7 @@ erpnext_ai_bots.render_markdown = function (text) {
     var charts = [];
     text = text.replace(/```chart\n([\s\S]*?)```/g, function(match, body) {
         charts.push(body.trim());
-        return '__CHART_' + (charts.length - 1) + '__';
+        return 'AICHART' + (charts.length - 1) + 'END';
     });
 
     // First pass: use Frappe's renderer
@@ -238,14 +238,13 @@ erpnext_ai_bots.render_markdown = function (text) {
         var _timestamp = Date.now();
         for (var _ci = 0; _ci < charts.length; _ci++) {
             var chart_id = 'ai-chart-' + _timestamp + '-' + _ci;
-            // Placeholders may have been wrapped in <p> tags by marked.js
+            // Replace placeholder — may be wrapped in <p>, <strong>, or bare
             html = html.replace(
-                new RegExp('<p>\\s*__CHART_' + _ci + '__\\s*</p>', 'g'),
+                new RegExp('<p>\\s*(?:<strong>)?\\s*AICHART' + _ci + 'END\\s*(?:</strong>)?\\s*</p>', 'g'),
                 '<div class="ai-chart-container"><canvas id="' + chart_id + '"></canvas></div>'
             );
-            // Fallback: plain placeholder (no wrapping <p>)
             html = html.replace(
-                '__CHART_' + _ci + '__',
+                new RegExp('(?:<strong>)?AICHART' + _ci + 'END(?:</strong>)?', 'g'),
                 '<div class="ai-chart-container"><canvas id="' + chart_id + '"></canvas></div>'
             );
 
