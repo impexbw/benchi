@@ -524,7 +524,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                                 </svg>
                             </button>
                             <input type="file" class="ai-chat-file-input" style="display:none"
-                                   multiple accept="image/*,.pdf,.csv,.xlsx,.txt,.json" />
+                                   multiple accept="image/*,.pdf,.csv,.xlsx,.xls,.txt,.json,.docx,.doc,.tsv,.md,.log" />
                             <textarea class="ai-chat-input"
                                 placeholder="Ask about your ERPNext data..."
                                 rows="1"></textarea>

@@ -11,7 +11,7 @@ from erpnext_ai_bots.tools.base import BaseTool
 class ReadFileTool(BaseTool):
     name = "core.read_file"
     description = (
-        "Read and parse an uploaded file. Supports TXT, CSV, Excel (XLSX/XLS), "
+        "Read and parse an uploaded file. Supports TXT, CSV, Excel (XLSX/XLS), Word (DOCX), "
         "PDF, and JSON files. Returns the file content as structured data that "
         "you can analyze, cross-reference with ERPNext, or act on. "
         "Use this when a user uploads a non-image file and asks questions about it. "
@@ -50,6 +50,8 @@ class ReadFileTool(BaseTool):
             return self._read_excel(content_bytes, max_rows)
         elif ext == "pdf":
             return self._read_pdf(content_bytes)
+        elif ext in ("docx", "doc"):
+            return self._read_docx(content_bytes)
         else:
             try:
                 return self._read_text(content_bytes)
@@ -193,6 +195,47 @@ class ReadFileTool(BaseTool):
         except ImportError:
             return {
                 "error": "No PDF reader installed. Ask admin to run: pip install PyPDF2"
+            }
+
+    def _read_docx(self, content_bytes):
+        """Extract text from Word documents (.docx)."""
+        try:
+            import docx
+            import io
+
+            doc = docx.Document(io.BytesIO(content_bytes))
+            text = ""
+
+            # Extract paragraphs
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text += para.text + "\n"
+
+            # Extract tables
+            for table in doc.tables:
+                text += "\n"
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    text += " | ".join(cells) + "\n"
+                text += "\n"
+
+            text = text.strip()
+            if not text:
+                return {
+                    "type": "docx",
+                    "content": "(Document appears empty or contains only images)",
+                }
+            if len(text) > 10000:
+                return {
+                    "type": "docx",
+                    "content": text[:10000],
+                    "truncated": True,
+                    "total_chars": len(text),
+                }
+            return {"type": "docx", "content": text, "truncated": False}
+        except ImportError:
+            return {
+                "error": "python-docx not installed. Ask admin to run: pip install python-docx"
             }
 
     # ------------------------------------------------------------------
