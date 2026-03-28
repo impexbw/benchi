@@ -11,6 +11,7 @@ required_apps = ["frappe", "erpnext"]
 
 # JS/CSS includes in desk
 app_include_js = [
+    "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js",
     "/assets/erpnext_ai_bots/js/chat_stream.js",
     "/assets/erpnext_ai_bots/js/chat_widget.js",
     "/assets/erpnext_ai_bots/js/openai_oauth.js",

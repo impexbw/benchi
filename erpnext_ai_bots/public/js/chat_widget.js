@@ -1,3 +1,136 @@
+// ── Chart helpers (standalone — must be before the class) ────────────────────
+
+function _parseChartConfig(raw) {
+    var config = { type: 'bar', title: '', labels: [], datasets: [], colors: [] };
+    var lines = raw.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var colonIdx = line.indexOf(':');
+        if (colonIdx === -1) continue;
+        var key = line.substring(0, colonIdx).trim().toLowerCase();
+        var val = line.substring(colonIdx + 1).trim();
+
+        if (key === 'type') {
+            config.type = val;
+        } else if (key === 'title') {
+            config.title = val;
+        } else if (key === 'labels') {
+            config.labels = val.split(',').map(function(s) { return s.trim(); });
+        } else if (key === 'data') {
+            config.datasets.push({
+                label: config.title,
+                data: val.split(',').map(function(s) { return parseFloat(s.trim()); }),
+            });
+        } else if (key === 'color') {
+            config.colors.push(val);
+        } else if (key === 'dataset') {
+            // Format: "Label | 1,2,3 | #color"
+            var parts = val.split('|').map(function(s) { return s.trim(); });
+            config.datasets.push({
+                label: parts[0] || '',
+                data: (parts[1] || '').split(',').map(function(s) { return parseFloat(s.trim()); }),
+            });
+            if (parts[2]) config.colors.push(parts[2]);
+        }
+    }
+    return config;
+}
+
+function _renderChart(canvas, raw) {
+    var config = _parseChartConfig(raw);
+    var accent = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ai-accent').trim() || '#8b5cf6';
+
+    // Obsidian Console color palette
+    var palette = [
+        accent, '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#f97316'
+    ];
+
+    // Assign custom colors from config.colors into each dataset
+    for (var i = 0; i < config.colors.length && i < config.datasets.length; i++) {
+        config.datasets[i]._color = config.colors[i];
+    }
+
+    var isPie = config.type === 'pie' || config.type === 'doughnut';
+    var isHorizontal = config.type === 'horizontalBar';
+    var chartType = isHorizontal ? 'bar' : config.type;
+
+    var datasets = config.datasets.map(function(ds, idx) {
+        var color = ds._color || palette[idx % palette.length];
+        var result = {
+            label: ds.label,
+            data: ds.data,
+            borderWidth: isPie ? 0 : 2,
+        };
+        if (isPie) {
+            result.backgroundColor = ds.data.map(function(_, j) {
+                return palette[j % palette.length] + 'cc';
+            });
+            result.borderColor = 'transparent';
+        } else {
+            result.backgroundColor = color + '33';
+            result.borderColor = color;
+            if (config.type === 'line') {
+                result.tension = 0.3;
+                result.fill = true;
+                result.pointRadius = 4;
+                result.pointBackgroundColor = color;
+            }
+        }
+        return result;
+    });
+
+    new Chart(canvas, {
+        type: chartType,
+        data: { labels: config.labels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            indexAxis: isHorizontal ? 'y' : 'x',
+            plugins: {
+                title: {
+                    display: !!config.title,
+                    text: config.title,
+                    color: '#e4e4e7',
+                    font: { size: 14, weight: '600' },
+                    padding: { bottom: 12 },
+                },
+                legend: {
+                    display: config.datasets.length > 1 || isPie,
+                    labels: {
+                        color: '#a1a1aa',
+                        font: { size: 11 },
+                        boxWidth: 12,
+                        padding: 12,
+                    },
+                },
+                tooltip: {
+                    backgroundColor: '#1e1e24',
+                    titleColor: '#e4e4e7',
+                    bodyColor: '#a1a1aa',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    cornerRadius: 6,
+                    padding: 10,
+                },
+            },
+            scales: isPie ? {} : {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                    ticks: { color: '#71717a', font: { size: 11 } },
+                },
+                y: {
+                    grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                    ticks: { color: '#71717a', font: { size: 11 } },
+                },
+            },
+        },
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 frappe.provide("erpnext_ai_bots");
 
 // ── Markdown table post-processor ───────────────────────────────────────────
@@ -7,6 +140,14 @@ frappe.provide("erpnext_ai_bots");
 
 erpnext_ai_bots.render_markdown = function (text) {
     if (!text) return "";
+
+    // Step 0: Extract ```chart blocks BEFORE markdown processing so the
+    // backtick fences are not mangled by marked.js.
+    var charts = [];
+    text = text.replace(/```chart\n([\s\S]*?)```/g, function(match, body) {
+        charts.push(body.trim());
+        return '__CHART_' + (charts.length - 1) + '__';
+    });
 
     // First pass: use Frappe's renderer
     let html = frappe.markdown(text) || "";
@@ -90,6 +231,35 @@ erpnext_ai_bots.render_markdown = function (text) {
             );
         }
     );
+
+    // Final step: replace chart placeholders with canvas elements, then
+    // schedule Chart.js initialisation after the bubble is in the DOM.
+    if (charts.length) {
+        var _timestamp = Date.now();
+        for (var _ci = 0; _ci < charts.length; _ci++) {
+            var chart_id = 'ai-chart-' + _timestamp + '-' + _ci;
+            // Placeholders may have been wrapped in <p> tags by marked.js
+            html = html.replace(
+                new RegExp('<p>\\s*__CHART_' + _ci + '__\\s*</p>', 'g'),
+                '<div class="ai-chart-container"><canvas id="' + chart_id + '"></canvas></div>'
+            );
+            // Fallback: plain placeholder (no wrapping <p>)
+            html = html.replace(
+                '__CHART_' + _ci + '__',
+                '<div class="ai-chart-container"><canvas id="' + chart_id + '"></canvas></div>'
+            );
+
+            // Capture loop variables for the async callback
+            (function(id, raw) {
+                setTimeout(function() {
+                    var canvas = document.getElementById(id);
+                    if (canvas && typeof Chart !== 'undefined') {
+                        _renderChart(canvas, raw);
+                    }
+                }, 100);
+            })(chart_id, charts[_ci]);
+        }
+    }
 
     return html;
 };
