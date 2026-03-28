@@ -223,12 +223,16 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 <div class="ai-chat-header">
                     <div class="ai-chat-header-left">
                         <span class="ai-chat-title">AI Assistant</span>
-                        <div class="ai-company-selector" style="position:relative;display:inline-block">
-                            <span class="ai-company-badge" title="Click to switch company">...</span>
-                            <div class="ai-company-dropdown"></div>
-                        </div>
+                        <span class="ai-company-badge" title="Click to switch company">...</span>
                     </div>
                     <div class="ai-chat-header-actions">
+                        <button class="ai-chat-toggle-sidebar btn btn-xs" title="Toggle sidebar" style="display:none">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <line x1="9" y1="3" x2="9" y2="21"/>
+                            </svg>
+                        </button>
                         <button class="ai-chat-new-session btn btn-xs" title="New conversation">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                                  stroke="currentColor" stroke-width="2">
@@ -369,7 +373,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$sidebar          = this.$panel.find(".ai-chat-sidebar");
         this.$session_list     = this.$panel.find(".ai-sidebar-session-list");
         this.$company_badge    = this.$panel.find(".ai-company-badge");
-        this.$company_dropdown = this.$panel.find(".ai-company-dropdown");
+        this.$company_dropdown = $('<div class="ai-company-dropdown"></div>').appendTo("body");
     }
 
     // ── Events ──────────────────────────────────────────────────────
@@ -379,6 +383,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel.find(".ai-chat-close").on("click", () => this.toggle());
         this.$panel.find(".ai-chat-new-session").on("click", () => this.new_session());
         this.$panel.find(".ai-sidebar-new-btn").on("click", () => this.new_session());
+        this.$panel.find(".ai-chat-toggle-sidebar").on("click", () => this._toggle_sidebar());
         this.$panel.find(".ai-chat-expand").on("click", () => this.toggle_expand());
         this.$panel.find(".ai-chat-send").on("click", () => this.send());
 
@@ -487,11 +492,19 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this._render_sidebar_sessions();
         });
 
-        // Company badge — toggle dropdown
+        // Company badge — toggle dropdown with fixed positioning
         this.$company_badge.on("click", (e) => {
             e.stopPropagation();
             const is_visible = this.$company_dropdown.is(":visible");
-            this.$company_dropdown.toggle(!is_visible);
+            if (!is_visible) {
+                const rect = this.$company_badge[0].getBoundingClientRect();
+                this.$company_dropdown.css({
+                    top: rect.bottom + 6,
+                    left: Math.max(rect.left, 10),
+                }).show();
+            } else {
+                this.$company_dropdown.hide();
+            }
         });
 
         // Close company dropdown on outside click
@@ -526,20 +539,25 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel.toggleClass("ai-chat-panel-expanded", this.is_expanded);
         this.$panel.find(".expand-icon").toggle(!this.is_expanded);
         this.$panel.find(".shrink-icon").toggle(this.is_expanded);
+        // Show/hide sidebar toggle button
+        this.$panel.find(".ai-chat-toggle-sidebar").toggle(this.is_expanded);
 
-        // In expanded mode: show sidebar, hide compact sessions bar.
-        // In compact mode: show sessions bar (if previously loaded), hide sidebar.
         if (this.is_expanded) {
             this.$sidebar.show();
             this.$panel.find(".ai-chat-sessions-bar").hide();
             this._load_sessions_list();
         } else {
             this.$sidebar.hide();
-            // Keep compact bar hidden until next manual expand – it was never
-            // shown in compact mode by default.
         }
 
         this._scroll_bottom();
+    }
+
+    _toggle_sidebar() {
+        if (!this.is_expanded) return;
+        const visible = this.$sidebar.is(":visible");
+        this.$sidebar.toggle(!visible);
+        this.$panel.toggleClass("ai-sidebar-hidden", visible);
     }
 
     // ── New session ──────────────────────────────────────────────────
