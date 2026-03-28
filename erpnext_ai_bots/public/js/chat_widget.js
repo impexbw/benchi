@@ -39,8 +39,9 @@ function _parseChartConfig(raw) {
 
 function _renderChart(canvas, raw) {
     var config = _parseChartConfig(raw);
-    var accent = getComputedStyle(document.documentElement)
-        .getPropertyValue('--ai-accent').trim() || '#8b5cf6';
+    var rawAccent = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ai-accent');
+    var accent = (rawAccent && rawAccent.trim()) ? rawAccent.trim() : '#8b5cf6';
 
     // Obsidian Console color palette
     var palette = [
@@ -80,6 +81,10 @@ function _renderChart(canvas, raw) {
         }
         return result;
     });
+
+    // Destroy any existing chart on this canvas before creating a new one
+    var existingChart = Chart.getChart(canvas);
+    if (existingChart) existingChart.destroy();
 
     new Chart(canvas, {
         type: chartType,

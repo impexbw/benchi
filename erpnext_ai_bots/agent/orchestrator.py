@@ -234,6 +234,10 @@ class Orchestrator:
             role = msg["role"]
             content = msg.get("content", "")
 
+            # Handle legacy dict content (e.g. old vision messages)
+            if isinstance(content, dict):
+                content = content.get("text", str(content))
+
             if isinstance(content, list):
                 # Skip turns that contain function_call_output items
                 # (tool results from previous loop iterations).
