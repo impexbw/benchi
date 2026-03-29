@@ -1968,3 +1968,31 @@
     letter-spacing: 0.08em;
     margin-bottom: 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ONLINE STATUS DOTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ai-user-avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.ai-online-dot, .ai-offline-dot {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--ai-bg-deep);
+}
+
+.ai-online-dot {
+    background: var(--ai-success);
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+}
+
+.ai-offline-dot {
+    background: var(--ai-text-dim);
+}

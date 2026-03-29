@@ -2137,13 +2137,19 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     async _show_forward_modal(message_index) {
         this._forward_target_index = message_index;
+        this._user_picker_mode = "forward";  // "forward" or "dm"
         this.$forward_modal.show();
+        this.$forward_modal.find(".ai-forward-header span").text("Forward to...");
+        this.$forward_modal.find(".ai-forward-note-wrap").show();
         this.$forward_modal.find(".ai-forward-search").val("").focus();
         this.$forward_modal.find(".ai-forward-note").val("");
+        this._load_user_picker_list();
+    }
+
+    async _load_user_picker_list() {
         this.$forward_modal.find(".ai-forward-user-list").html(
             '<div class="ai-forward-loading">Loading users...</div>'
         );
-
         try {
             const r = await frappe.call({
                 method: "erpnext_ai_bots.api.messaging.get_company_users",
@@ -2151,7 +2157,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 async: true,
             });
             this._forward_users = r.message || [];
-            this._render_forward_users(this._forward_users);
+            this._render_user_picker(this._forward_users);
         } catch (e) {
             this.$forward_modal.find(".ai-forward-user-list").html(
                 '<div class="ai-forward-loading">Could not load users</div>'
@@ -2159,27 +2165,41 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         }
     }
 
-    _render_forward_users(users) {
+    _render_user_picker(users) {
         const $list = this.$forward_modal.find(".ai-forward-user-list");
         $list.empty();
         if (!users.length) {
             $list.html('<div class="ai-forward-loading">No users found</div>');
             return;
         }
+        const mode = this._user_picker_mode;
         for (const u of users) {
             const avatar = u.user_image
                 ? `<img src="${u.user_image}" class="ai-forward-avatar" />`
                 : `<span class="ai-forward-avatar-placeholder">${(u.full_name || u.name).charAt(0).toUpperCase()}</span>`;
+            const online_dot = u.is_online
+                ? '<span class="ai-online-dot" title="Online"></span>'
+                : '<span class="ai-offline-dot" title="Offline"></span>';
             const $item = $(`
                 <div class="ai-forward-user-item" data-user="${frappe.utils.escape_html(u.name)}">
-                    ${avatar}
+                    <div class="ai-user-avatar-wrap">
+                        ${avatar}
+                        ${online_dot}
+                    </div>
                     <div class="ai-forward-user-info">
                         <span class="ai-forward-user-name">${frappe.utils.escape_html(u.full_name || u.name)}</span>
                         <span class="ai-forward-user-email">${frappe.utils.escape_html(u.name)}</span>
                     </div>
                 </div>
             `);
-            $item.on("click", () => this._do_forward(u.name, u.full_name || u.name));
+            if (mode === "forward") {
+                $item.on("click", () => this._do_forward(u.name, u.full_name || u.name));
+            } else {
+                $item.on("click", () => {
+                    this.$forward_modal.hide();
+                    this._open_dm_conversation(u.name, u.full_name || u.name);
+                });
+            }
             $list.append($item);
         }
     }
@@ -2192,12 +2212,17 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 u.name.toLowerCase().includes(query)
             )
             : this._forward_users;
-        this._render_forward_users(filtered);
+        this._render_user_picker(filtered);
     }
 
     async _do_forward(to_user, to_name) {
         const note = this.$forward_modal.find(".ai-forward-note").val().trim();
         this.$forward_modal.hide();
+
+        if (this._forward_target_index == null) {
+            frappe.show_alert({ message: __("No message selected to forward"), indicator: "orange" });
+            return;
+        }
 
         try {
             await frappe.call({
@@ -2323,6 +2348,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             const avatar = conv.user_image
                 ? `<img src="${conv.user_image}" class="ai-dm-avatar" />`
                 : `<span class="ai-dm-avatar-placeholder">${(conv.full_name || conv.user).charAt(0).toUpperCase()}</span>`;
+            const online_dot = conv.is_online
+                ? '<span class="ai-online-dot" title="Online"></span>'
+                : '<span class="ai-offline-dot" title="Offline"></span>';
             const unread = conv.unread_count > 0
                 ? `<span class="ai-dm-unread">${conv.unread_count}</span>`
                 : "";
@@ -2331,7 +2359,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
             const $item = $(`
                 <div class="ai-dm-conv-item${is_active}" data-user="${frappe.utils.escape_html(conv.user)}">
-                    ${avatar}
+                    <div class="ai-user-avatar-wrap">
+                        ${avatar}
+                        ${online_dot}
+                    </div>
                     <div class="ai-dm-conv-info">
                         <div class="ai-dm-conv-top">
                             <span class="ai-dm-conv-name">${frappe.utils.escape_html(conv.full_name || conv.user)}</span>
@@ -2472,51 +2503,12 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     async _show_dm_user_picker() {
-        // Reuse the forward modal as a user picker
+        this._user_picker_mode = "dm";
         this.$forward_modal.show();
         this.$forward_modal.find(".ai-forward-header span").text("New message to...");
         this.$forward_modal.find(".ai-forward-note-wrap").hide();
         this.$forward_modal.find(".ai-forward-search").val("").focus();
-        this.$forward_modal.find(".ai-forward-user-list").html(
-            '<div class="ai-forward-loading">Loading users...</div>'
-        );
-
-        try {
-            const r = await frappe.call({
-                method: "erpnext_ai_bots.api.messaging.get_company_users",
-                args: { company: this._current_company || "" },
-                async: true,
-            });
-            this._forward_users = r.message || [];
-            // Override click to open DM instead of forward
-            const $list = this.$forward_modal.find(".ai-forward-user-list");
-            $list.empty();
-            for (const u of this._forward_users) {
-                const avatar = u.user_image
-                    ? `<img src="${u.user_image}" class="ai-forward-avatar" />`
-                    : `<span class="ai-forward-avatar-placeholder">${(u.full_name || u.name).charAt(0).toUpperCase()}</span>`;
-                const $item = $(`
-                    <div class="ai-forward-user-item" data-user="${frappe.utils.escape_html(u.name)}">
-                        ${avatar}
-                        <div class="ai-forward-user-info">
-                            <span class="ai-forward-user-name">${frappe.utils.escape_html(u.full_name || u.name)}</span>
-                            <span class="ai-forward-user-email">${frappe.utils.escape_html(u.name)}</span>
-                        </div>
-                    </div>
-                `);
-                $item.on("click", () => {
-                    this.$forward_modal.hide();
-                    this.$forward_modal.find(".ai-forward-note-wrap").show();
-                    this.$forward_modal.find(".ai-forward-header span").text("Forward to...");
-                    this._open_dm_conversation(u.name, u.full_name || u.name);
-                });
-                $list.append($item);
-            }
-        } catch (e) {
-            this.$forward_modal.find(".ai-forward-user-list").html(
-                '<div class="ai-forward-loading">Could not load users</div>'
-            );
-        }
+        this._load_user_picker_list();
     }
 
     // ── Send DM ──────────────────────────────────────────────────────

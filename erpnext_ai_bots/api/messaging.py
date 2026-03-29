@@ -63,6 +63,24 @@ def get_company_users(company: str = None):
             limit_page_length=100,
         )
 
+    # Enrich with online status — check who has an active session
+    online_users = set()
+    try:
+        active_sessions = frappe.db.sql("""
+            SELECT DISTINCT user FROM `tabSessions`
+            WHERE user NOT IN ('Guest', 'Administrator')
+              AND TIMESTAMPDIFF(SECOND, lastupdate, NOW()) < 300
+        """, pluck="user")
+        online_users = set(active_sessions)
+    except Exception:
+        pass
+
+    for u in users:
+        u["is_online"] = u["name"] in online_users
+
+    # Sort: online users first, then alphabetical
+    users.sort(key=lambda u: (not u["is_online"], (u.get("full_name") or u["name"]).lower()))
+
     return users
 
 
@@ -235,6 +253,20 @@ def get_dm_conversations(company: str = None):
             conv["full_name"] = other_user
             conv["user_image"] = None
         result.append(conv)
+
+    # Enrich with online status
+    try:
+        active_sessions = frappe.db.sql("""
+            SELECT DISTINCT user FROM `tabSessions`
+            WHERE user NOT IN ('Guest', 'Administrator')
+              AND TIMESTAMPDIFF(SECOND, lastupdate, NOW()) < 300
+        """, pluck="user")
+        online_set = set(active_sessions)
+        for conv in result:
+            conv["is_online"] = conv["user"] in online_set
+    except Exception:
+        for conv in result:
+            conv["is_online"] = False
 
     # Sort by last_message_at descending
     result.sort(key=lambda x: x["last_message_at"], reverse=True)
