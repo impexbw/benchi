@@ -102,9 +102,22 @@ def forward_message(session_id: str, message_index: int, to_user: str, note: str
     if session.user != user and "System Manager" not in frappe.get_roles(user):
         frappe.throw(_("Access denied"), frappe.PermissionError)
 
-    # Extract the message
+    # Extract the message — filter same way as frontend
     messages = json.loads(session.messages_json or "[]")
-    visible = [m for m in messages if m.get("role") in ("user", "assistant")]
+    visible = []
+    for m in messages:
+        role = m.get("role", "")
+        if role == "system":
+            continue
+        c = m.get("content", "")
+        if isinstance(c, str) and c.strip():
+            visible.append(m)
+        elif isinstance(c, list) and any(
+            isinstance(b, dict) and b.get("type") == "text" and b.get("text")
+            for b in c
+        ):
+            visible.append(m)
+
     if message_index < 0 or message_index >= len(visible):
         frappe.throw(_("Invalid message index"))
 
@@ -113,13 +126,14 @@ def forward_message(session_id: str, message_index: int, to_user: str, note: str
     if isinstance(content, list):
         parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
         content = "\n".join(filter(None, parts))
+    elif not isinstance(content, str):
+        content = str(content)
 
     role_label = "You" if msg.get("role") == "user" else "AI Assistant"
-    forwarded_text = content
     if note:
-        forwarded_text = f"{note}\n\n--- Forwarded from {role_label} ---\n{content}"
+        forwarded_text = f"{note}\n\n--- Forwarded from {role_label} ---\n\n{content}"
     else:
-        forwarded_text = f"--- Forwarded from {role_label} ---\n{content}"
+        forwarded_text = f"--- Forwarded from {role_label} ---\n\n{content}"
 
     # Create DM
     dm = frappe.get_doc({
@@ -331,3 +345,153 @@ def get_unread_dm_count():
         filters={"to_user": user, "is_read": 0},
     )
     return {"count": count}
+
+
+@frappe.whitelist()
+def get_ai_name():
+    """Get the configured AI assistant name."""
+    try:
+        name = frappe.db.get_single_value("AI Bot Settings", "ai_name")
+    except Exception:
+        name = None
+    return {"ai_name": name or "AI Oracle"}
+
+
+@frappe.whitelist()
+def ask_ai_in_dm(question: str, to_user: str, company: str = None):
+    """Invoke the AI agent from within a DM conversation.
+
+    The user types @ai <question> in a DM. This endpoint:
+    1. Creates a hidden AI Chat Session for the question
+    2. Runs the orchestrator
+    3. Posts the AI response as a DM from AI to both users in the conversation
+
+    The AI response is streamed back via Socket.IO as ai_dm_ai_response.
+    """
+    user = frappe.session.user
+
+    if not question or not question.strip():
+        frappe.throw(_("Question cannot be empty"))
+
+    if not company:
+        company = frappe.defaults.get_user_default("company", user)
+
+    ai_name = frappe.db.get_single_value("AI Bot Settings", "ai_name") or "AI Oracle"
+
+    # Post the user's @ai message as a DM visible to both
+    user_dm = frappe.get_doc({
+        "doctype": "AI Direct Message",
+        "from_user": user,
+        "to_user": to_user,
+        "company": company,
+        "message": f"@{ai_name} {question}",
+        "message_type": "text",
+    })
+    user_dm.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    # Notify the other user of the @ai question
+    frappe.publish_realtime(
+        "ai_dm_new",
+        {
+            "from_user": user,
+            "from_name": frappe.db.get_value("User", user, "full_name") or user,
+            "message": f"@{ai_name} {question}"[:200],
+            "dm_id": user_dm.name,
+        },
+        user=to_user,
+    )
+
+    # Enqueue the AI processing in background
+    frappe.enqueue(
+        "erpnext_ai_bots.api.messaging._process_ai_dm",
+        queue="default",
+        timeout=300,
+        is_async=True,
+        user=user,
+        to_user=to_user,
+        question=question,
+        company=company,
+        ai_name=ai_name,
+    )
+
+    return {"status": "processing", "dm_id": user_dm.name}
+
+
+def _process_ai_dm(user, to_user, question, company, ai_name):
+    """Background job: run AI agent and post response as DM."""
+    frappe.set_user(user)
+
+    # Create a temporary AI Chat Session for this question
+    session = frappe.get_doc({
+        "doctype": "AI Chat Session",
+        "user": user,
+        "company": company,
+        "status": "Active",
+        "title": f"DM AI: {question[:80]}",
+        "category": "General",
+        "messages_json": "[]",
+        "model_used": frappe.db.get_single_value("AI Bot Settings", "model_name") or "",
+    })
+    session.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    # Run the orchestrator synchronously
+    try:
+        from erpnext_ai_bots.agent.orchestrator import run_orchestrator
+        run_orchestrator(
+            user=user,
+            session_id=session.name,
+            message=question,
+            company=company,
+        )
+    except Exception as e:
+        ai_response = f"Sorry, I encountered an error: {str(e)}"
+        _post_ai_dm_response(user, to_user, company, ai_name, ai_response)
+        return
+
+    # Extract the AI response from the session
+    session.reload()
+    messages = json.loads(session.messages_json or "[]")
+    ai_msgs = [m for m in messages if m.get("role") == "assistant"]
+    if ai_msgs:
+        content = ai_msgs[-1].get("content", "")
+        if isinstance(content, list):
+            parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            content = "\n".join(filter(None, parts))
+        ai_response = content or "I processed your request but had no text response."
+    else:
+        ai_response = "I couldn't generate a response. Please try again."
+
+    _post_ai_dm_response(user, to_user, company, ai_name, ai_response)
+
+
+def _post_ai_dm_response(user, to_user, company, ai_name, response):
+    """Post the AI response as DMs to both users in the conversation."""
+    # Post AI response as a DM from the requesting user (marked as AI)
+    ai_dm = frappe.get_doc({
+        "doctype": "AI Direct Message",
+        "from_user": user,
+        "to_user": to_user,
+        "company": company,
+        "message": f"**{ai_name}:**\n{response}",
+        "message_type": "text",
+    })
+    ai_dm.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    full_name = frappe.db.get_value("User", user, "full_name") or user
+
+    # Notify both users via real-time
+    for target_user in [user, to_user]:
+        frappe.publish_realtime(
+            "ai_dm_ai_response",
+            {
+                "from_user": user,
+                "to_user": to_user,
+                "ai_name": ai_name,
+                "message": response[:500],
+                "dm_id": ai_dm.name,
+            },
+            user=target_user,
+        )

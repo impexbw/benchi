@@ -932,8 +932,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this._on_dm_received(data);
         });
 
-        // Load unread DM count on init
+        // Listen for AI responses in DMs
+        frappe.realtime.on("ai_dm_ai_response", (data) => {
+            this._on_ai_dm_response(data);
+        });
+
+        // Load unread DM count and AI name on init
         this._load_unread_dm_count();
+        this._load_ai_name();
     }
 
     // ── Panel open/close ─────────────────────────────────────────────
@@ -2251,6 +2257,31 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     // DIRECT MESSAGE (DM) FEATURE
     // ═══════════════════════════════════════════════════════════════════
 
+    async _load_ai_name() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_ai_name",
+                async: true,
+            });
+            this._ai_name = (r.message && r.message.ai_name) || "AI Oracle";
+        } catch (e) {
+            this._ai_name = "AI Oracle";
+        }
+    }
+
+    _on_ai_dm_response(data) {
+        // If we're viewing this DM conversation, show the AI response
+        const other = data.from_user === frappe.session.user ? data.to_user : data.from_user;
+        if (this._dm_mode && this._dm_user === other) {
+            this._remove_status_indicators();
+            this._append_dm_bubble("received", `**${data.ai_name}:**\n${data.message}`, data.ai_name);
+        }
+        // Refresh DM list
+        if (this._dm_mode && this.is_expanded) {
+            this._load_dm_conversations();
+        }
+    }
+
     async _load_unread_dm_count() {
         try {
             const r = await frappe.call({
@@ -2428,8 +2459,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.$messages.html('<div class="ai-msg ai-msg-bot">Could not load messages</div>');
         }
 
-        // Rebind input to send DMs instead of AI messages
-        this.$input.attr("placeholder", `Message ${other_name}...`);
+        // Update input placeholder with @ai hint
+        const ai_hint = this._ai_name || "AI Oracle";
+        this.$input.attr("placeholder", `Message ${other_name}... (type @ai to ask AI)`);
 
         // Refresh unread count
         this._load_unread_dm_count();
@@ -2519,13 +2551,48 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         const reply_to = this._dm_reply_to || null;
         const reply_opts = {};
         if (reply_to) {
-            // Find the reply text from the reply bar
             reply_opts.reply_to_text = this.$reply_bar.find(".ai-reply-bar-text").text();
         }
         this._cancel_reply();
         this._dm_reply_to = null;
 
-        // Optimistic UI: show the message immediately
+        // Check for @ai mention (case-insensitive, match configured AI name)
+        const ai_name = this._ai_name || "AI Oracle";
+        const ai_pattern = new RegExp("^@" + ai_name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s+", "i");
+        const ai_generic = /^@ai\s+/i;
+
+        if (ai_pattern.test(message) || ai_generic.test(message)) {
+            // Extract the question after the @mention
+            const question = message.replace(ai_pattern, "").replace(ai_generic, "").trim();
+            if (!question) {
+                frappe.show_alert({ message: __("Please type a question after @" + ai_name), indicator: "orange" });
+                return;
+            }
+
+            // Show the message immediately
+            this._append_dm_bubble("sent", message, "You", reply_opts);
+
+            // Show thinking indicator
+            this._show_thinking();
+
+            try {
+                await frappe.call({
+                    method: "erpnext_ai_bots.api.messaging.ask_ai_in_dm",
+                    args: {
+                        question: question,
+                        to_user: this._dm_user,
+                        company: this._current_company || "",
+                    },
+                    async: true,
+                });
+            } catch (e) {
+                this._remove_status_indicators();
+                frappe.show_alert({ message: __("Could not invoke AI"), indicator: "red" });
+            }
+            return;
+        }
+
+        // Regular DM — optimistic UI
         this._append_dm_bubble("sent", message, "You", reply_opts);
 
         try {
