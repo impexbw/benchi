@@ -2291,15 +2291,15 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 </span>
                 <div class="ai-mention-info">
                     <span class="ai-mention-name">${frappe.utils.escape_html(ai_name)}</span>
-                    <span class="ai-mention-hint">Ask AI a question</span>
+                    <span class="ai-mention-hint">Ask ${frappe.utils.escape_html(ai_name)} a question</span>
                 </div>
             </div>
         `);
 
         $item.on("click", () => {
-            // Replace the trailing @ with @ai
+            // Replace the trailing @ with @<ai_name>
             const val = this.$input.val();
-            const newVal = val.replace(/@$/, "@ai ");
+            const newVal = val.replace(/@$/, "@" + ai_name + " ");
             this.$input.val(newVal).trigger("input").focus();
             this._hide_mention_popup();
         });
@@ -2531,9 +2531,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             this.$messages.html('<div class="ai-msg ai-msg-bot">Could not load messages</div>');
         }
 
-        // Update input placeholder with @ai hint
+        // Update input placeholder with AI name hint
         const ai_hint = this._ai_name || "AI Oracle";
-        this.$input.attr("placeholder", `Message ${other_name}... (type @ai to ask AI)`);
+        this.$input.attr("placeholder", `Message ${other_name}... (type @${ai_hint} to ask AI)`);
 
         // Refresh unread count
         this._load_unread_dm_count();
@@ -2562,7 +2562,15 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             $msg.addClass("ai-msg-forwarded");
         }
 
-        $msg.append($('<span class="ai-msg-text"></span>').text(text));
+        // Render markdown for received messages (forwards, AI responses),
+        // plain text for sent messages
+        if (role === "received") {
+            $msg.append($('<div class="ai-dm-content"></div>').html(
+                erpnext_ai_bots.render_markdown(text)
+            ));
+        } else {
+            $msg.append($('<span class="ai-msg-text"></span>').text(text));
+        }
 
         // DM context menu (reply within DM)
         $msg.on("contextmenu", (e) => {
