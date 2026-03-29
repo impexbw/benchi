@@ -1996,3 +1996,61 @@
 .ai-offline-dot {
     background: var(--ai-text-dim);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   @ MENTION POPUP
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ai-mention-popup {
+    position: fixed;
+    z-index: 10003;
+    background: var(--ai-bg-elevated);
+    border: 1px solid var(--ai-border-strong);
+    border-radius: var(--ai-radius);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    animation: ai-msg-in 0.12s ease-out;
+}
+
+.ai-mention-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.ai-mention-item:hover {
+    background: var(--ai-bg-hover);
+}
+
+.ai-mention-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--ai-accent), #ec4899);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+}
+
+.ai-mention-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ai-mention-name {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ai-accent);
+}
+
+.ai-mention-hint {
+    display: block;
+    font-size: 11px;
+    color: var(--ai-text-dim);
+}

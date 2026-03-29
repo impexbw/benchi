@@ -650,6 +650,11 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$session_list     = this.$panel.find(".ai-sidebar-session-list");
         this.$company_badge    = this.$panel.find(".ai-company-badge");
         this.$company_dropdown = $('<div class="ai-company-dropdown"></div>').appendTo("body");
+        // @ mention popup
+        this.$mention_popup = $(`
+            <div class="ai-mention-popup" style="display:none"></div>
+        `).appendTo("body");
+
         this.$reply_bar        = this.$panel.find(".ai-reply-bar");
         this.$dm_section       = this.$panel.find(".ai-sidebar-dm-section");
         this.$dm_conv_list     = this.$panel.find(".ai-dm-conversation-list");
@@ -671,6 +676,19 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 this.send();
+            }
+        });
+
+        // @ mention popup in DM mode
+        this.$input.on("input", () => {
+            if (this._dm_mode && this._dm_user) {
+                const val = this.$input.val();
+                // Show popup when user types @ at start or after space
+                if (val === "@" || val.endsWith(" @") || /\s@$/.test(val)) {
+                    this._show_mention_popup();
+                } else if (!val.includes("@")) {
+                    this._hide_mention_popup();
+                }
             }
         });
 
@@ -2256,6 +2274,60 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     // ═══════════════════════════════════════════════════════════════════
     // DIRECT MESSAGE (DM) FEATURE
     // ═══════════════════════════════════════════════════════════════════
+
+    _show_mention_popup() {
+        const ai_name = this._ai_name || "AI Oracle";
+        const $popup = this.$mention_popup;
+        $popup.empty();
+
+        const $item = $(`
+            <div class="ai-mention-item">
+                <span class="ai-mention-avatar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2">
+                        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+                        <path d="M12 8v4l3 3"/>
+                    </svg>
+                </span>
+                <div class="ai-mention-info">
+                    <span class="ai-mention-name">${frappe.utils.escape_html(ai_name)}</span>
+                    <span class="ai-mention-hint">Ask AI a question</span>
+                </div>
+            </div>
+        `);
+
+        $item.on("click", () => {
+            // Replace the trailing @ with @ai
+            const val = this.$input.val();
+            const newVal = val.replace(/@$/, "@ai ");
+            this.$input.val(newVal).trigger("input").focus();
+            this._hide_mention_popup();
+        });
+
+        $popup.append($item);
+
+        // Position above the input
+        const input_rect = this.$input[0].getBoundingClientRect();
+        $popup.css({
+            left: input_rect.left,
+            bottom: window.innerHeight - input_rect.top + 4,
+            width: Math.min(input_rect.width, 250),
+        }).show();
+
+        // Close on outside click
+        setTimeout(() => {
+            $(document).one("mousedown.ai_mention", (e) => {
+                if (!$(e.target).closest(".ai-mention-popup").length) {
+                    this._hide_mention_popup();
+                }
+            });
+        }, 50);
+    }
+
+    _hide_mention_popup() {
+        this.$mention_popup.hide();
+        $(document).off("mousedown.ai_mention");
+    }
 
     async _load_ai_name() {
         try {

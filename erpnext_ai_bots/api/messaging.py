@@ -419,10 +419,20 @@ def ask_ai_in_dm(question: str, to_user: str, company: str = None):
 
 
 def _process_ai_dm(user, to_user, question, company, ai_name):
-    """Background job: run AI agent and post response as DM."""
+    """Background job: run AI agent and post response as DM.
+
+    For simple conversational messages (no ERPNext data needed), uses a
+    lightweight direct LLM call. For complex queries, uses the full orchestrator.
+    """
     frappe.set_user(user)
 
-    # Create a temporary AI Chat Session for this question
+    # Try lightweight direct call first for simple messages
+    response = _try_lightweight_ai(question, user, company, ai_name)
+    if response:
+        _post_ai_dm_response(user, to_user, company, ai_name, response)
+        return
+
+    # Fall back to full orchestrator for complex queries
     session = frappe.get_doc({
         "doctype": "AI Chat Session",
         "user": user,
@@ -436,7 +446,6 @@ def _process_ai_dm(user, to_user, question, company, ai_name):
     session.insert(ignore_permissions=True)
     frappe.db.commit()
 
-    # Run the orchestrator synchronously
     try:
         from erpnext_ai_bots.agent.orchestrator import run_orchestrator
         run_orchestrator(
@@ -450,7 +459,6 @@ def _process_ai_dm(user, to_user, question, company, ai_name):
         _post_ai_dm_response(user, to_user, company, ai_name, ai_response)
         return
 
-    # Extract the AI response from the session
     session.reload()
     messages = json.loads(session.messages_json or "[]")
     ai_msgs = [m for m in messages if m.get("role") == "assistant"]
@@ -464,6 +472,87 @@ def _process_ai_dm(user, to_user, question, company, ai_name):
         ai_response = "I couldn't generate a response. Please try again."
 
     _post_ai_dm_response(user, to_user, company, ai_name, ai_response)
+
+
+def _try_lightweight_ai(question, user, company, ai_name):
+    """Attempt a fast, direct LLM call without tools for simple messages.
+
+    Returns the response string if successful, or None to fall back to the
+    full orchestrator.
+    """
+    # Detect if this is a simple conversational message (no ERPNext data needed)
+    q_lower = question.lower().strip()
+    data_keywords = [
+        "invoice", "payment", "stock", "item", "customer", "supplier",
+        "report", "balance", "ledger", "quotation", "order", "employee",
+        "salary", "leave", "attendance", "create", "update", "delete",
+        "submit", "cancel", "show me", "list", "how much", "how many",
+        "what is the", "what are the", "get", "find", "search", "run",
+        "schedule", "remind", "email", "send", "chart", "graph",
+        "analyze", "file", "image", "sql", "query",
+    ]
+    needs_tools = any(kw in q_lower for kw in data_keywords)
+    if needs_tools:
+        return None
+
+    settings = frappe.get_cached_doc("AI Bot Settings")
+    provider = settings.provider or "Anthropic"
+
+    user_full_name = frappe.db.get_value("User", user, "full_name") or user
+
+    system_msg = (
+        f"You are {ai_name}, a friendly AI assistant at {company or 'the company'}. "
+        f"You are chatting with {user_full_name} in a direct message. "
+        f"Keep responses concise, friendly, and natural. "
+        f"If the user asks about ERPNext data, invoices, reports, stock, or anything "
+        f"that requires database access, reply with exactly: [NEEDS_TOOLS] "
+        f"so the system can route to the full agent."
+    )
+
+    try:
+        if provider == "Anthropic":
+            import anthropic
+            api_key = settings.get_password("api_key")
+            if not api_key:
+                return None
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=settings.model_name or "claude-sonnet-4-20250514",
+                max_tokens=512,
+                system=system_msg,
+                messages=[{"role": "user", "content": question}],
+            )
+            text = ""
+            for block in response.content:
+                if hasattr(block, "text"):
+                    text += block.text
+            if "[NEEDS_TOOLS]" in text:
+                return None
+            return text.strip() if text.strip() else None
+
+        elif provider == "OpenAI (ChatGPT OAuth)":
+            from erpnext_ai_bots.licensing.openai_codex import CodexClient
+            codex = CodexClient()
+            response = codex.responses.create(
+                model=settings.model_name or "gpt-4.1",
+                instructions=system_msg,
+                input=question,
+                max_output_tokens=512,
+            )
+            text = ""
+            for item in response.output:
+                if hasattr(item, "content"):
+                    for block in item.content:
+                        if hasattr(block, "text"):
+                            text += block.text
+            if "[NEEDS_TOOLS]" in text:
+                return None
+            return text.strip() if text.strip() else None
+
+    except Exception:
+        return None
+
+    return None
 
 
 def _post_ai_dm_response(user, to_user, company, ai_name, response):
