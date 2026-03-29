@@ -33,12 +33,14 @@ TOOL_PERMISSION_MAP = {
     "stock.get_warehouse_summary": ("read", "Warehouse"),
     "stock.get_item_info": ("read", "Item"),
     "stock.get_reorder_levels": ("read", "Item"),
+    "stock.create_item": ("create", "Item"),
 
     "sales.get_pipeline": ("read", "Opportunity"),
     "sales.create_quotation": ("create", "Quotation"),
     "sales.get_sales_orders": ("read", "Sales Order"),
     "sales.get_customer_info": ("read", "Customer"),
     "sales.get_revenue_summary": ("read", "Sales Invoice"),
+    "sales.create_customer": ("create", "Customer"),
 
     "meta.spawn_subagent": (None, None),
     "meta.schedule_task": (None, None),
@@ -52,6 +54,7 @@ TOOL_PERMISSION_MAP = {
     "purchase.create_purchase_order": ("create", "Purchase Order"),
     "purchase.get_supplier_info": ("read", "Supplier"),
     "purchase.get_purchase_invoices": ("read", "Purchase Invoice"),
+    "purchase.create_supplier": ("create", "Supplier"),
 
     # CRM tools
     "crm.manage_lead": ("read", "Lead"),

@@ -38,6 +38,7 @@ TOOL_MAP = {
     "stock.get_warehouse_summary": "erpnext_ai_bots.tools.stock.warehouse_summary.GetWarehouseSummaryTool",
     "stock.get_item_info": "erpnext_ai_bots.tools.stock.item_info.GetItemInfoTool",
     "stock.get_reorder_levels": "erpnext_ai_bots.tools.stock.reorder.GetReorderLevelsTool",
+    "stock.create_item": "erpnext_ai_bots.tools.stock.create_item.CreateItemTool",
 
     # Sales tools
     "sales.get_pipeline": "erpnext_ai_bots.tools.sales.pipeline.GetPipelineTool",
@@ -45,6 +46,7 @@ TOOL_MAP = {
     "sales.get_sales_orders": "erpnext_ai_bots.tools.sales.sales_order.GetSalesOrdersTool",
     "sales.get_customer_info": "erpnext_ai_bots.tools.sales.customer_info.GetCustomerInfoTool",
     "sales.get_revenue_summary": "erpnext_ai_bots.tools.sales.revenue_summary.GetRevenueSummaryTool",
+    "sales.create_customer": "erpnext_ai_bots.tools.sales.create_customer.CreateCustomerTool",
 
     # Meta tools
     "meta.spawn_subagent": "erpnext_ai_bots.tools.meta.spawn_subagent.SpawnSubagentTool",
@@ -59,6 +61,7 @@ TOOL_MAP = {
     "purchase.create_purchase_order": "erpnext_ai_bots.tools.purchase.purchase_order.CreatePurchaseOrderTool",
     "purchase.get_supplier_info": "erpnext_ai_bots.tools.purchase.supplier_info.GetSupplierInfoTool",
     "purchase.get_purchase_invoices": "erpnext_ai_bots.tools.purchase.purchase_invoice.GetPurchaseInvoicesTool",
+    "purchase.create_supplier": "erpnext_ai_bots.tools.purchase.create_supplier.CreateSupplierTool",
 
     # CRM tools
     "crm.manage_lead": "erpnext_ai_bots.tools.crm.lead.LeadTool",

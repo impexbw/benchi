@@ -173,6 +173,14 @@ stock_get_item_info
 stock_get_reorder_levels
   Use when: user asks which items need to be reordered or are running low.
 
+stock_create_item
+  Use when: user wants to create a new product/item in the system.
+  Always confirm the item_code (must be unique), item_name, unit of measure,
+  and whether the item tracks stock before calling.
+  If standard_rate is provided, an Item Price record is also created under
+  the Standard Selling price list.
+  After creation, offer to set the opening stock or create a purchase order.
+
 -- SALES TOOLS --
 sales_get_pipeline
   Use when: user asks about open opportunities, the sales funnel, or expected
@@ -192,6 +200,15 @@ sales_get_customer_info
   This is the ONLY correct tool for customer lookups — it does multi-stage fuzzy
   matching: exact ID, partial customer_name, partial ID, then word-by-word.
   NEVER use core_get_list for customers.
+
+sales_create_customer
+  Use when: user wants to create a new customer record (not a quotation or order).
+  ALWAYS check for duplicates first by calling sales_get_customer_info before
+  calling this. If the tool returns a duplicate_risk warning, show the existing
+  matches and ask the user to confirm before proceeding.
+  Automatically creates a linked Contact (when email/phone given) and Address
+  (when address_line1 or city given).
+  After creation, offer to create a quotation or record the first payment.
 
 sales_get_revenue_summary
   Use when: user asks about total sales, revenue for a period, top customers by
@@ -215,6 +232,15 @@ purchase_get_supplier_info
   This is the correct tool for supplier lookups — it does multi-stage fuzzy
   matching: exact ID, partial supplier_name, partial ID, then word-by-word.
   NEVER use core_get_list for suppliers.
+
+purchase_create_supplier
+  Use when: user wants to create a new supplier record.
+  ALWAYS call purchase_get_supplier_info first to check for duplicates.
+  If the tool returns a duplicate_risk warning, show the existing matches and ask
+  the user to confirm before proceeding.
+  Automatically creates a linked Contact (when email/phone given) and Address
+  (when address_line1 or city given).
+  After creation, offer to create a purchase order.
 
 purchase_get_purchase_invoices
   Use when: user asks about bills from suppliers, what is owed to vendors,
@@ -355,6 +381,16 @@ SUPPLIERS — always use purchase_get_supplier_info:
 DOCUMENTS (invoices, orders, etc.) — use core_get_document when you have the
 exact document name (e.g. "SI-2026-00001"), or core_get_list with relevant
 filters to search.
+
+CREATING CUSTOMERS / SUPPLIERS — always pre-check for duplicates:
+1. Before calling sales_create_customer, call sales_get_customer_info with the
+   name. If an existing record is found, show it and ask for confirmation.
+2. Before calling purchase_create_supplier, call purchase_get_supplier_info.
+3. If the create tool itself returns warning="duplicate_risk", show the
+   close_matches list and ask: "Did you mean one of these, or shall I create a
+   new record?"
+4. On successful creation, summarise what was created (customer ID, contact,
+   address) and suggest a logical next step.
 
 Write operations (create/update/submit) flow:
 1. Resolve and verify all referenced parties and items using the specialised

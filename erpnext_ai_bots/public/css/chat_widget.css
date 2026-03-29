@@ -1241,3 +1241,99 @@
     object-fit: contain;
     display: block;
 }
+
+/* ── Help button ──────────────────────────────────────────────────────────── */
+.ai-chat-help {
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--ai-text-dim);
+    transition: color 0.12s;
+}
+.ai-chat-help:hover {
+    color: var(--ai-accent);
+}
+
+/* ── Help panel ───────────────────────────────────────────────────────────── */
+.ai-help-panel {
+    background: var(--ai-bg-surface);
+    border: 1px solid var(--ai-border);
+    border-radius: var(--ai-radius-lg);
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.ai-help-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--ai-border);
+}
+
+.ai-help-header h3 {
+    color: var(--ai-text-bright);
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.ai-help-close {
+    background: none;
+    border: none;
+    color: var(--ai-text-dim);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+    transition: color 0.12s;
+}
+.ai-help-close:hover {
+    color: var(--ai-text-bright);
+}
+
+.ai-help-content {
+    columns: 2;
+    column-gap: 24px;
+}
+
+@media (max-width: 600px) {
+    .ai-help-content {
+        columns: 1;
+    }
+}
+
+.ai-help-section {
+    break-inside: avoid;
+    margin-bottom: 18px;
+}
+
+.ai-help-section h4 {
+    color: var(--ai-accent);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 6px;
+}
+
+.ai-help-cmd {
+    color: var(--ai-text);
+    font-size: 12px;
+    padding: 5px 8px 5px 10px;
+    border-radius: var(--ai-radius-sm);
+    margin-bottom: 3px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+    border-left: 2px solid transparent;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.ai-help-cmd:hover {
+    background: var(--ai-bg-hover);
+    border-left-color: var(--ai-accent);
+    color: var(--ai-text-bright);
+}

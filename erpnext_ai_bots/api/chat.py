@@ -180,7 +180,7 @@ def get_sessions(limit: int = 20, offset: int = 0):
             "name", "title", "status", "category", "message_count",
             "last_message_at", "total_cost_usd", "creation", "pinned",
         ],
-        order_by="last_message_at desc",
+        order_by="COALESCE(last_message_at, creation) desc",
         limit_page_length=min(int(limit), 50),
         limit_start=int(offset),
     )

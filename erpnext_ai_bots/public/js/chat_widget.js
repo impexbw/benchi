@@ -423,6 +423,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                                 <line x1="5" y1="12" x2="19" y2="12"/>
                             </svg>
                         </button>
+                        <button class="ai-chat-help btn btn-xs" title="Help — see all commands">?</button>
                         <button class="ai-chat-export btn btn-xs" title="Export conversation">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                                  stroke="currentColor" stroke-width="2">
@@ -696,6 +697,11 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             }
         });
 
+        // Help panel
+        this.$panel.find(".ai-chat-help").on("click", () => {
+            this._show_help();
+        });
+
         // Sidebar search — instant client-side filtering
         this.$panel.on("input", ".ai-sidebar-search", (e) => {
             this._search_query = e.target.value.trim().toLowerCase();
@@ -789,6 +795,124 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         }
     }
 
+    _scroll_top() {
+        this.$messages.scrollTop(0);
+    }
+
+    _show_help() {
+        const help_html = `
+        <div class="ai-help-panel">
+            <div class="ai-help-header">
+                <h3>AI Oracle — Available Commands</h3>
+                <button class="ai-help-close">&times;</button>
+            </div>
+            <div class="ai-help-content">
+                <div class="ai-help-section">
+                    <h4>Sales &amp; Customers</h4>
+                    <div class="ai-help-cmd">"Create a customer John Smith, email john@email.com, phone 71234567"</div>
+                    <div class="ai-help-cmd">"Look up customer NIRMAL"</div>
+                    <div class="ai-help-cmd">"Create a quotation for NIRMAL: 10 units of item 1-1"</div>
+                    <div class="ai-help-cmd">"Show me today's sales summary"</div>
+                    <div class="ai-help-cmd">"What are our top 10 customers?"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Purchasing &amp; Suppliers</h4>
+                    <div class="ai-help-cmd">"Create a supplier ACME Corp, email acme@corp.com"</div>
+                    <div class="ai-help-cmd">"Look up supplier TOOL WHOLESALE"</div>
+                    <div class="ai-help-cmd">"Create a PO for TOOL WHOLESALE: 100x item 1-1"</div>
+                    <div class="ai-help-cmd">"Show me overdue purchase invoices"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Accounting &amp; Finance</h4>
+                    <div class="ai-help-cmd">"Show me the trial balance"</div>
+                    <div class="ai-help-cmd">"Record payment of BWP 5000 from NIRMAL"</div>
+                    <div class="ai-help-cmd">"Show me the P&amp;L for this quarter"</div>
+                    <div class="ai-help-cmd">"What are our bank balances?"</div>
+                    <div class="ai-help-cmd">"Show general ledger for NIRMAL"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Stock &amp; Inventory</h4>
+                    <div class="ai-help-cmd">"Create item ABC-001, name Widget, rate 50"</div>
+                    <div class="ai-help-cmd">"What is the stock level for item 1-1?"</div>
+                    <div class="ai-help-cmd">"Which items need reordering?"</div>
+                    <div class="ai-help-cmd">"Transfer 5 units of item 1-1 between warehouses"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>HR &amp; People</h4>
+                    <div class="ai-help-cmd">"What is my leave balance?"</div>
+                    <div class="ai-help-cmd">"Apply for 2 days leave from April 1"</div>
+                    <div class="ai-help-cmd">"Show my salary slip"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>CRM</h4>
+                    <div class="ai-help-cmd">"Create a lead: John, john@email.com, from website"</div>
+                    <div class="ai-help-cmd">"List open opportunities"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Projects</h4>
+                    <div class="ai-help-cmd">"List active projects"</div>
+                    <div class="ai-help-cmd">"Create task: Review Q1 financials, high priority"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Support</h4>
+                    <div class="ai-help-cmd">"Create ticket: POS not printing, priority High"</div>
+                    <div class="ai-help-cmd">"List open support issues"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Assets</h4>
+                    <div class="ai-help-cmd">"List all company assets"</div>
+                    <div class="ai-help-cmd">"Show depreciation for asset ABC"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Saved Reports</h4>
+                    <div class="ai-help-cmd">"Save a report called daily-sales: show today's sales by branch"</div>
+                    <div class="ai-help-cmd">"Run the daily-sales report"</div>
+                    <div class="ai-help-cmd">"List my saved reports"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Scheduling</h4>
+                    <div class="ai-help-cmd">"Remind me to check overdue invoices in 15 minutes"</div>
+                    <div class="ai-help-cmd">"Send me a sales summary every Monday at 8am"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Files &amp; Media</h4>
+                    <div class="ai-help-cmd">[Upload CSV/Excel/PDF/Word] "Analyze this file"</div>
+                    <div class="ai-help-cmd">[Upload image] "What is in this picture?"</div>
+                    <div class="ai-help-cmd">"Email me the overdue invoices report"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Data &amp; Charts</h4>
+                    <div class="ai-help-cmd">"Show monthly sales as a line chart"</div>
+                    <div class="ai-help-cmd">"Revenue by customer group as a pie chart"</div>
+                    <div class="ai-help-cmd">[SQL] "Run: SELECT customer, SUM(grand_total)..."</div>
+                </div>
+            </div>
+        </div>`;
+
+        // Remove any existing help panel, then prepend the new one
+        this.$messages.find(".ai-help-panel").remove();
+        this.$messages.prepend(help_html);
+        this._scroll_top();
+
+        // Close button
+        this.$messages.find(".ai-help-close").on("click", () => {
+            this.$messages.find(".ai-help-panel").remove();
+        });
+
+        // Click a command to paste it into the input (strip surrounding quotes)
+        this.$messages.on("click.ai_help", ".ai-help-cmd", (e) => {
+            const raw = $(e.currentTarget).text().trim();
+            // Skip file-upload placeholders that start with [
+            if (raw.startsWith("[")) return;
+            // Strip surrounding quotation marks added for readability
+            const text = raw.replace(/^"/, "").replace(/"$/, "");
+            this.$input.val(text);
+            this.$input.focus();
+            this.$messages.find(".ai-help-panel").remove();
+            this.$messages.off("click.ai_help");
+        });
+    }
+
     toggle_expand() {
         this.is_expanded = !this.is_expanded;
         this.$panel.toggleClass("ai-chat-panel-expanded", this.is_expanded);
@@ -873,19 +997,22 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         if (this._loading_session) return;
         this._loading_session = true;
 
-        // If switching away from a streaming session, just stop listening.
-        // The backend job continues and saves to DB on its own.
-        // When the user clicks back, _load_session will fetch the completed
-        // response from the database.
+        // If switching away from a streaming session, let the backend finish.
+        // We just reset the UI state — the backend job saves to DB independently.
         if (this.is_streaming) {
+            // Keep the old session ID to auto-refresh later
+            const was_streaming_sid = this.session_id;
             this.is_streaming = false;
             this._cleanup_stream();
             this._remove_status_indicators();
-            this.$panel.find(".ai-chat-send").prop("disabled", false);
             if (this._stream_timeout) {
                 clearTimeout(this._stream_timeout);
                 this._stream_timeout = null;
             }
+            // Auto-refresh the old session after a delay (backend may still be processing)
+            setTimeout(() => {
+                if (this.is_expanded) this._load_sessions_list();
+            }, 10000);
         }
 
         this._remove_status_indicators();
