@@ -675,6 +675,11 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$input.on("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
+                // If mention popup is open, select it instead of sending
+                if (this.$mention_popup.is(":visible")) {
+                    this.$mention_popup.find(".ai-mention-item").first().trigger("click");
+                    return;
+                }
                 this.send();
             }
         });
