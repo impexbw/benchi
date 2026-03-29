@@ -195,8 +195,26 @@ erpnext_ai_bots.render_markdown = function (text) {
         }
     );
 
-    // Third pass: metric cards DISABLED — tables are cleaner for ERPNext data.
-    // All data renders as professional tables with styled headers.
+    // Third pass: Add code block headers with language label + copy button (ChatGPT style)
+    html = html.replace(
+        /<pre><code(?:\s+class="(?:language-)?(\w+)")?>([\s\S]*?)<\/code><\/pre>/g,
+        function(match, lang, code) {
+            var langLabel = lang || 'code';
+            var uid = 'ai-cb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+            var header = '<div class="ai-code-header">'
+                + '<span class="ai-code-lang">' + langLabel + '</span>'
+                + '<button class="ai-code-copy" data-code-id="' + uid + '" onclick="'
+                + 'var el=document.getElementById(\'' + uid + '\');'
+                + 'if(el){navigator.clipboard.writeText(el.textContent).then(function(){'
+                + 'var b=document.querySelector(\'[data-code-id=&quot;' + uid + '&quot;]\');'
+                + 'b.classList.add(\'copied\');b.innerHTML=\'&#10003; Copied\';'
+                + 'setTimeout(function(){b.classList.remove(\'copied\');b.innerHTML=\'Copy\';},2000);'
+                + '})}">'
+                + 'Copy</button>'
+                + '</div>';
+            return '<pre>' + header + '<code id="' + uid + '">' + code + '</code></pre>';
+        }
+    );
 
     // Fourth pass: convert ERPNext document IDs into clickable links.
     // Maps document prefixes to their ERPNext URL route slugs.
@@ -307,6 +325,13 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         // Feature 17: ElevenLabs TTS
         this._elevenlabs_key = "";
         this._elevenlabs_voice_id = "21m00Tcm4TlvDq8ikWAM";
+        // Feature: Reply, Forward, DM
+        this._reply_to = null;          // { index, role, text } — message being replied to
+        this._message_index = 0;        // running index for visible messages
+        this._dm_mode = false;          // true when viewing DMs
+        this._dm_user = null;           // currently open DM conversation partner
+        this._dm_conversations = [];    // cached DM conversation list
+        this._dm_unread_count = 0;      // total unread DMs
         this.render();
         this.bind_events();
         this._load_last_session();
@@ -475,12 +500,26 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                             <input type="text" class="ai-sidebar-search form-control form-control-sm"
                                    placeholder="Search conversations..." />
                         </div>
-                        <div class="ai-sidebar-category-tabs">
-                            ${erpnext_ai_bots.CATEGORIES.map(c =>
-                                `<button class="ai-cat-tab${c === "All" ? " active" : ""}" data-cat="${c}">${c}</button>`
-                            ).join("")}
+                        <div class="ai-sidebar-mode-tabs">
+                            <button class="ai-mode-tab active" data-mode="ai">AI Chats</button>
+                            <button class="ai-mode-tab" data-mode="dm">DMs <span class="ai-dm-badge" style="display:none">0</span></button>
                         </div>
-                        <div class="ai-sidebar-session-list"></div>
+                        <div class="ai-sidebar-ai-section">
+                            <div class="ai-sidebar-category-tabs">
+                                ${erpnext_ai_bots.CATEGORIES.map(c =>
+                                    `<button class="ai-cat-tab${c === "All" ? " active" : ""}" data-cat="${c}">${c}</button>`
+                                ).join("")}
+                            </div>
+                            <div class="ai-sidebar-session-list"></div>
+                        </div>
+                        <div class="ai-sidebar-dm-section" style="display:none">
+                            <div class="ai-dm-user-search-wrap">
+                                <input type="text" class="ai-dm-user-search form-control form-control-sm"
+                                       placeholder="Search users..." />
+                            </div>
+                            <div class="ai-dm-conversation-list"></div>
+                            <button class="ai-dm-new-chat-btn btn btn-sm">+ New Message</button>
+                        </div>
                     </div>
 
                     <!-- Chat area -->
@@ -516,6 +555,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                         <div class="ai-chat-tool-indicator" style="display:none">
                             <div class="ai-tool-spinner"></div>
                             <span class="ai-tool-name"></span>
+                        </div>
+                        <!-- Reply preview bar -->
+                        <div class="ai-reply-bar" style="display:none">
+                            <div class="ai-reply-bar-content">
+                                <span class="ai-reply-bar-label">Replying to</span>
+                                <span class="ai-reply-bar-text"></span>
+                            </div>
+                            <button class="ai-reply-bar-close">&times;</button>
                         </div>
                         <div class="ai-chat-input-area">
                             <button class="ai-chat-attach btn btn-xs" title="Attach file">
@@ -560,6 +607,34 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             </div>
         `).appendTo("body");
 
+        // Message context menu (reply / forward)
+        this.$msg_ctx_menu = $(`
+            <div class="ai-msg-ctx-menu" style="display:none">
+                <button class="ai-msg-ctx-reply">Reply</button>
+                <button class="ai-msg-ctx-forward">Forward</button>
+                <button class="ai-msg-ctx-copy">Copy</button>
+            </div>
+        `).appendTo("body");
+
+        // Forward user picker modal
+        this.$forward_modal = $(`
+            <div class="ai-forward-modal" style="display:none">
+                <div class="ai-forward-modal-inner">
+                    <div class="ai-forward-header">
+                        <span>Forward to...</span>
+                        <button class="ai-forward-close">&times;</button>
+                    </div>
+                    <input type="text" class="ai-forward-search form-control form-control-sm"
+                           placeholder="Search users..." />
+                    <div class="ai-forward-user-list"></div>
+                    <div class="ai-forward-note-wrap">
+                        <input type="text" class="ai-forward-note form-control form-control-sm"
+                               placeholder="Add a note (optional)..." />
+                    </div>
+                </div>
+            </div>
+        `).appendTo("body");
+
         // Export dropdown (shared, appended to body)
         this.$export_menu = $(`
             <div class="ai-export-menu" style="display:none">
@@ -575,6 +650,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$session_list     = this.$panel.find(".ai-sidebar-session-list");
         this.$company_badge    = this.$panel.find(".ai-company-badge");
         this.$company_dropdown = $('<div class="ai-company-dropdown"></div>').appendTo("body");
+        this.$reply_bar        = this.$panel.find(".ai-reply-bar");
+        this.$dm_section       = this.$panel.find(".ai-sidebar-dm-section");
+        this.$dm_conv_list     = this.$panel.find(".ai-dm-conversation-list");
+        this.$ai_section       = this.$panel.find(".ai-sidebar-ai-section");
     }
 
     // ── Events ──────────────────────────────────────────────────────
@@ -781,6 +860,80 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel.find(".ai-chat-voice").on("click", () => {
             this._toggle_voice_input();
         });
+
+        // ── Reply bar close ──────────────────────────────────────────
+        this.$reply_bar.find(".ai-reply-bar-close").on("click", () => {
+            this._cancel_reply();
+        });
+
+        // ── Message context menu actions ─────────────────────────────
+        this.$msg_ctx_menu.find(".ai-msg-ctx-reply").on("click", () => {
+            const target = this._msg_ctx_target;
+            this._hide_msg_ctx_menu();
+            if (target) this._start_reply(target.index, target.role, target.text);
+        });
+
+        this.$msg_ctx_menu.find(".ai-msg-ctx-forward").on("click", () => {
+            const target = this._msg_ctx_target;
+            this._hide_msg_ctx_menu();
+            if (target) this._show_forward_modal(target.index);
+        });
+
+        this.$msg_ctx_menu.find(".ai-msg-ctx-copy").on("click", () => {
+            const target = this._msg_ctx_target;
+            this._hide_msg_ctx_menu();
+            if (target && target.text) {
+                navigator.clipboard.writeText(target.text).then(() => {
+                    frappe.show_alert({ message: __("Copied to clipboard"), indicator: "green" });
+                });
+            }
+        });
+
+        // Close message context menu on outside click
+        $(document).on("mousedown.ai_msg_ctx", (e) => {
+            if (!$(e.target).closest(".ai-msg-ctx-menu").length) {
+                this._hide_msg_ctx_menu();
+            }
+        });
+
+        // Forward modal events
+        this.$forward_modal.find(".ai-forward-close").on("click", () => {
+            this.$forward_modal.hide();
+        });
+
+        this.$forward_modal.find(".ai-forward-search").on("input", (e) => {
+            this._filter_forward_users(e.target.value.trim().toLowerCase());
+        });
+
+        // ── DM mode toggle tabs ─────────────────────────────────────
+        this.$panel.on("click", ".ai-mode-tab", (e) => {
+            const mode = $(e.currentTarget).data("mode");
+            this.$panel.find(".ai-mode-tab").removeClass("active");
+            $(e.currentTarget).addClass("active");
+            if (mode === "dm") {
+                this._enter_dm_mode();
+            } else {
+                this._exit_dm_mode();
+            }
+        });
+
+        // DM new chat button
+        this.$panel.on("click", ".ai-dm-new-chat-btn", () => {
+            this._show_dm_user_picker();
+        });
+
+        // DM user search
+        this.$panel.on("input", ".ai-dm-user-search", (e) => {
+            this._filter_dm_conversations(e.target.value.trim().toLowerCase());
+        });
+
+        // Listen for incoming DMs via Socket.IO
+        frappe.realtime.on("ai_dm_new", (data) => {
+            this._on_dm_received(data);
+        });
+
+        // Load unread DM count on init
+        this._load_unread_dm_count();
     }
 
     // ── Panel open/close ─────────────────────────────────────────────
@@ -945,6 +1098,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.session_id = null;
         this.$messages.empty();
         this._cleanup_stream();
+        this._cancel_reply();
+        this._message_index = 0;
+        this._dm_mode = false;
+        this._dm_user = null;
         this.$input.focus();
         // Update compact selector
         this.$panel.find(".ai-chat-session-select").val("");
@@ -956,14 +1113,36 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     // ── Message rendering ────────────────────────────────────────────
 
-    add_message(role, content) {
+    add_message(role, content, opts) {
+        opts = opts || {};
         const cls = role === "user" ? "ai-msg-user" : "ai-msg-bot";
-        const $msg = $(`<div class="ai-msg ${cls}"></div>`);
-        if (role === "user") {
-            $msg.text(content);
-        } else {
-            $msg.html(erpnext_ai_bots.render_markdown(content));
+        const idx = opts.index != null ? opts.index : this._message_index++;
+        const $msg = $(`<div class="ai-msg ${cls}" data-msg-idx="${idx}"></div>`);
+
+        // Reply quote bubble
+        if (opts.reply_to_text) {
+            const reply_label = opts.reply_to_role === "user" ? "You" : "AI Assistant";
+            const $quote = $(`<div class="ai-reply-quote">
+                <span class="ai-reply-quote-label">${frappe.utils.escape_html(reply_label)}</span>
+                <span class="ai-reply-quote-text">${frappe.utils.escape_html(opts.reply_to_text.substring(0, 120))}</span>
+            </div>`);
+            $msg.append($quote);
         }
+
+        if (role === "user") {
+            $msg.append($('<span class="ai-msg-text"></span>').text(content));
+        } else {
+            $msg.append($(erpnext_ai_bots.render_markdown(content)));
+        }
+
+        // Right-click context menu for reply/forward (only on AI chat, not DM)
+        if (!this._dm_mode) {
+            $msg.on("contextmenu", (e) => {
+                e.preventDefault();
+                this._show_msg_ctx_menu(e.pageX, e.pageY, idx, role, content);
+            });
+        }
+
         this.$messages.append($msg);
         this._scroll_bottom();
         return $msg;
@@ -1026,6 +1205,9 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             const data = r.message || {};
             this.session_id = session_id;
             this.$messages.empty();
+            this._message_index = 0;
+            this._dm_mode = false;
+            this._dm_user = null;
 
             const messages = data.messages || [];
             const visible_messages = messages.filter(
@@ -1277,6 +1459,12 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         const message = retry_message || this.$input.val().trim();
         if (!message) return;
 
+        // Route to DM send if in DM mode
+        if (this._dm_mode && this._dm_user) {
+            this._send_dm(message);
+            return;
+        }
+
         // Build the actual message sent to the AI, prepending file context if available
         let actual_message = message;
         if (!retry_message && this._pending_attachment) {
@@ -1286,7 +1474,13 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
         if (!retry_message) {
             this.$input.val("").trigger("input");
-            this.add_message("user", message);
+            // Include reply context if replying
+            const reply_opts = this._reply_to ? {
+                reply_to_text: this._reply_to.text,
+                reply_to_role: this._reply_to.role,
+            } : {};
+            this.add_message("user", message, reply_opts);
+            this._cancel_reply();
             // Hide templates on first real send
             this.$messages.find(".ai-templates-grid").hide();
         }
@@ -1902,6 +2096,459 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         if (this.stream_handler) {
             this.stream_handler.destroy();
             this.stream_handler = null;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // REPLY FEATURE
+    // ═══════════════════════════════════════════════════════════════════
+
+    _show_msg_ctx_menu(x, y, index, role, text) {
+        this._msg_ctx_target = { index, role, text };
+        const menu_w = 140;
+        const menu_h = 100;
+        const left = Math.min(x, window.innerWidth - menu_w - 8);
+        const top  = Math.min(y, window.innerHeight - menu_h - 8);
+        this.$msg_ctx_menu.css({ left, top }).show();
+    }
+
+    _hide_msg_ctx_menu() {
+        this.$msg_ctx_menu.hide();
+        this._msg_ctx_target = null;
+    }
+
+    _start_reply(index, role, text) {
+        this._reply_to = { index, role, text };
+        const label = role === "user" ? "You" : "AI Assistant";
+        this.$reply_bar.find(".ai-reply-bar-label").text("Replying to " + label);
+        this.$reply_bar.find(".ai-reply-bar-text").text(text.substring(0, 80) + (text.length > 80 ? "..." : ""));
+        this.$reply_bar.show();
+        this.$input.focus();
+    }
+
+    _cancel_reply() {
+        this._reply_to = null;
+        this.$reply_bar.hide();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FORWARD FEATURE
+    // ═══════════════════════════════════════════════════════════════════
+
+    async _show_forward_modal(message_index) {
+        this._forward_target_index = message_index;
+        this.$forward_modal.show();
+        this.$forward_modal.find(".ai-forward-search").val("").focus();
+        this.$forward_modal.find(".ai-forward-note").val("");
+        this.$forward_modal.find(".ai-forward-user-list").html(
+            '<div class="ai-forward-loading">Loading users...</div>'
+        );
+
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_company_users",
+                args: { company: this._current_company || "" },
+                async: true,
+            });
+            this._forward_users = r.message || [];
+            this._render_forward_users(this._forward_users);
+        } catch (e) {
+            this.$forward_modal.find(".ai-forward-user-list").html(
+                '<div class="ai-forward-loading">Could not load users</div>'
+            );
+        }
+    }
+
+    _render_forward_users(users) {
+        const $list = this.$forward_modal.find(".ai-forward-user-list");
+        $list.empty();
+        if (!users.length) {
+            $list.html('<div class="ai-forward-loading">No users found</div>');
+            return;
+        }
+        for (const u of users) {
+            const avatar = u.user_image
+                ? `<img src="${u.user_image}" class="ai-forward-avatar" />`
+                : `<span class="ai-forward-avatar-placeholder">${(u.full_name || u.name).charAt(0).toUpperCase()}</span>`;
+            const $item = $(`
+                <div class="ai-forward-user-item" data-user="${frappe.utils.escape_html(u.name)}">
+                    ${avatar}
+                    <div class="ai-forward-user-info">
+                        <span class="ai-forward-user-name">${frappe.utils.escape_html(u.full_name || u.name)}</span>
+                        <span class="ai-forward-user-email">${frappe.utils.escape_html(u.name)}</span>
+                    </div>
+                </div>
+            `);
+            $item.on("click", () => this._do_forward(u.name, u.full_name || u.name));
+            $list.append($item);
+        }
+    }
+
+    _filter_forward_users(query) {
+        if (!this._forward_users) return;
+        const filtered = query
+            ? this._forward_users.filter(u =>
+                (u.full_name || "").toLowerCase().includes(query) ||
+                u.name.toLowerCase().includes(query)
+            )
+            : this._forward_users;
+        this._render_forward_users(filtered);
+    }
+
+    async _do_forward(to_user, to_name) {
+        const note = this.$forward_modal.find(".ai-forward-note").val().trim();
+        this.$forward_modal.hide();
+
+        try {
+            await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.forward_message",
+                args: {
+                    session_id: this.session_id,
+                    message_index: this._forward_target_index,
+                    to_user: to_user,
+                    note: note,
+                },
+                async: true,
+            });
+            frappe.show_alert({
+                message: __("Message forwarded to {0}", [to_name]),
+                indicator: "green",
+            });
+        } catch (e) {
+            frappe.show_alert({
+                message: __("Could not forward message"),
+                indicator: "red",
+            });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DIRECT MESSAGE (DM) FEATURE
+    // ═══════════════════════════════════════════════════════════════════
+
+    async _load_unread_dm_count() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_unread_dm_count",
+                async: true,
+            });
+            this._dm_unread_count = (r.message && r.message.count) || 0;
+            this._update_dm_badge();
+        } catch (e) {
+            // Silently fail
+        }
+    }
+
+    _update_dm_badge() {
+        const $badge = this.$panel.find(".ai-dm-badge");
+        if (this._dm_unread_count > 0) {
+            $badge.text(this._dm_unread_count).show();
+        } else {
+            $badge.hide();
+        }
+    }
+
+    _on_dm_received(data) {
+        this._dm_unread_count++;
+        this._update_dm_badge();
+
+        // If we're viewing DMs with this sender, append the message live
+        if (this._dm_mode && this._dm_user === data.from_user) {
+            this._append_dm_bubble("received", data.message, data.from_name);
+            // Auto-mark as read
+            frappe.call({
+                method: "erpnext_ai_bots.api.messaging.mark_dm_read",
+                args: { other_user: data.from_user },
+                async: true,
+            });
+        } else {
+            // Show a toast notification
+            frappe.show_alert({
+                message: `<strong>${frappe.utils.escape_html(data.from_name)}</strong>: ${frappe.utils.escape_html(data.message.substring(0, 60))}`,
+                indicator: "blue",
+            });
+        }
+
+        // Refresh DM conversation list if sidebar is showing DMs
+        if (this._dm_mode && this.is_expanded) {
+            this._load_dm_conversations();
+        }
+    }
+
+    _enter_dm_mode() {
+        this._dm_mode = true;
+        this.$ai_section.hide();
+        this.$dm_section.show();
+        this._load_dm_conversations();
+        // Update header title
+        this.$panel.find(".ai-chat-title").text("Direct Messages");
+    }
+
+    _exit_dm_mode() {
+        this._dm_mode = false;
+        this._dm_user = null;
+        this.$dm_section.hide();
+        this.$ai_section.show();
+        this.$panel.find(".ai-chat-title").text("AI Assistant");
+        // If we were viewing a DM conversation, reload the AI session
+        if (this.session_id) {
+            this._load_session(this.session_id);
+        } else {
+            this.$messages.empty();
+            this._show_templates();
+        }
+    }
+
+    async _load_dm_conversations() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_dm_conversations",
+                args: { company: this._current_company || "" },
+                async: true,
+            });
+            this._dm_conversations = r.message || [];
+            this._render_dm_conversations(this._dm_conversations);
+        } catch (e) {
+            this.$dm_conv_list.html('<div class="ai-sidebar-empty">Could not load conversations</div>');
+        }
+    }
+
+    _render_dm_conversations(conversations) {
+        this.$dm_conv_list.empty();
+        if (!conversations.length) {
+            this.$dm_conv_list.html('<div class="ai-sidebar-empty">No conversations yet</div>');
+            return;
+        }
+        for (const conv of conversations) {
+            const avatar = conv.user_image
+                ? `<img src="${conv.user_image}" class="ai-dm-avatar" />`
+                : `<span class="ai-dm-avatar-placeholder">${(conv.full_name || conv.user).charAt(0).toUpperCase()}</span>`;
+            const unread = conv.unread_count > 0
+                ? `<span class="ai-dm-unread">${conv.unread_count}</span>`
+                : "";
+            const preview = conv.is_from_me ? `You: ${conv.last_message}` : conv.last_message;
+            const is_active = conv.user === this._dm_user ? " active" : "";
+
+            const $item = $(`
+                <div class="ai-dm-conv-item${is_active}" data-user="${frappe.utils.escape_html(conv.user)}">
+                    ${avatar}
+                    <div class="ai-dm-conv-info">
+                        <div class="ai-dm-conv-top">
+                            <span class="ai-dm-conv-name">${frappe.utils.escape_html(conv.full_name || conv.user)}</span>
+                            ${unread}
+                        </div>
+                        <span class="ai-dm-conv-preview">${frappe.utils.escape_html(preview.substring(0, 40))}</span>
+                    </div>
+                </div>
+            `);
+            $item.on("click", () => this._open_dm_conversation(conv.user, conv.full_name || conv.user));
+            this.$dm_conv_list.append($item);
+        }
+    }
+
+    _filter_dm_conversations(query) {
+        if (!this._dm_conversations) return;
+        const filtered = query
+            ? this._dm_conversations.filter(c =>
+                (c.full_name || "").toLowerCase().includes(query) ||
+                c.user.toLowerCase().includes(query)
+            )
+            : this._dm_conversations;
+        this._render_dm_conversations(filtered);
+    }
+
+    async _open_dm_conversation(other_user, other_name) {
+        this._dm_user = other_user;
+        this._dm_mode = true;
+        this.$messages.empty();
+        this.$panel.find(".ai-chat-title").text(other_name);
+
+        // Highlight active conversation in sidebar
+        this.$dm_conv_list.find(".ai-dm-conv-item").removeClass("active");
+        this.$dm_conv_list.find(`.ai-dm-conv-item[data-user="${other_user}"]`).addClass("active");
+
+        // Mark messages as read
+        frappe.call({
+            method: "erpnext_ai_bots.api.messaging.mark_dm_read",
+            args: { other_user },
+            async: true,
+        });
+
+        // Load message history
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_dm_history",
+                args: { other_user, limit: 50, offset: 0 },
+                async: true,
+            });
+            const messages = r.message || [];
+            for (const msg of messages) {
+                const is_mine = msg.from_user === frappe.session.user;
+                const role = is_mine ? "sent" : "received";
+                const opts = {};
+                if (msg.reply_preview) {
+                    opts.reply_to_text = msg.reply_preview;
+                    opts.reply_to_role = msg.reply_from === frappe.session.user ? "user" : "other";
+                }
+                this._append_dm_bubble(role, msg.message, is_mine ? "You" : other_name, opts, msg.name);
+            }
+            this._scroll_bottom();
+        } catch (e) {
+            this.$messages.html('<div class="ai-msg ai-msg-bot">Could not load messages</div>');
+        }
+
+        // Rebind input to send DMs instead of AI messages
+        this.$input.attr("placeholder", `Message ${other_name}...`);
+
+        // Refresh unread count
+        this._load_unread_dm_count();
+        this._load_dm_conversations();
+    }
+
+    _append_dm_bubble(role, text, sender_name, opts, dm_id) {
+        opts = opts || {};
+        const cls = role === "sent" ? "ai-msg-user" : "ai-msg-bot ai-msg-dm";
+        const $msg = $(`<div class="ai-msg ${cls}" data-dm-id="${dm_id || ''}"></div>`);
+
+        if (role === "received") {
+            $msg.prepend(`<span class="ai-dm-sender-label">${frappe.utils.escape_html(sender_name)}</span>`);
+        }
+
+        // Reply quote
+        if (opts.reply_to_text) {
+            const $quote = $(`<div class="ai-reply-quote">
+                <span class="ai-reply-quote-text">${frappe.utils.escape_html(opts.reply_to_text.substring(0, 100))}</span>
+            </div>`);
+            $msg.append($quote);
+        }
+
+        // Forward badge
+        if (text.includes("--- Forwarded from")) {
+            $msg.addClass("ai-msg-forwarded");
+        }
+
+        $msg.append($('<span class="ai-msg-text"></span>').text(text));
+
+        // DM context menu (reply within DM)
+        $msg.on("contextmenu", (e) => {
+            e.preventDefault();
+            this._show_dm_msg_ctx(e.pageX, e.pageY, dm_id, text);
+        });
+
+        this.$messages.append($msg);
+        this._scroll_bottom();
+        return $msg;
+    }
+
+    _show_dm_msg_ctx(x, y, dm_id, text) {
+        this._dm_reply_target = { dm_id, text };
+        // Reuse the message context menu but only show Reply + Copy
+        this.$msg_ctx_menu.find(".ai-msg-ctx-forward").hide();
+        this.$msg_ctx_menu.find(".ai-msg-ctx-reply").off("click").on("click", () => {
+            this._hide_msg_ctx_menu();
+            if (this._dm_reply_target) {
+                this._start_dm_reply(this._dm_reply_target.dm_id, this._dm_reply_target.text);
+            }
+        });
+        this.$msg_ctx_menu.find(".ai-msg-ctx-copy").off("click").on("click", () => {
+            this._hide_msg_ctx_menu();
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    frappe.show_alert({ message: __("Copied"), indicator: "green" });
+                });
+            }
+        });
+        const left = Math.min(x, window.innerWidth - 140);
+        const top  = Math.min(y, window.innerHeight - 80);
+        this.$msg_ctx_menu.css({ left, top }).show();
+    }
+
+    _start_dm_reply(dm_id, text) {
+        this._dm_reply_to = dm_id;
+        this.$reply_bar.find(".ai-reply-bar-label").text("Reply");
+        this.$reply_bar.find(".ai-reply-bar-text").text(text.substring(0, 80));
+        this.$reply_bar.show();
+        this.$input.focus();
+    }
+
+    async _show_dm_user_picker() {
+        // Reuse the forward modal as a user picker
+        this.$forward_modal.show();
+        this.$forward_modal.find(".ai-forward-header span").text("New message to...");
+        this.$forward_modal.find(".ai-forward-note-wrap").hide();
+        this.$forward_modal.find(".ai-forward-search").val("").focus();
+        this.$forward_modal.find(".ai-forward-user-list").html(
+            '<div class="ai-forward-loading">Loading users...</div>'
+        );
+
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_company_users",
+                args: { company: this._current_company || "" },
+                async: true,
+            });
+            this._forward_users = r.message || [];
+            // Override click to open DM instead of forward
+            const $list = this.$forward_modal.find(".ai-forward-user-list");
+            $list.empty();
+            for (const u of this._forward_users) {
+                const avatar = u.user_image
+                    ? `<img src="${u.user_image}" class="ai-forward-avatar" />`
+                    : `<span class="ai-forward-avatar-placeholder">${(u.full_name || u.name).charAt(0).toUpperCase()}</span>`;
+                const $item = $(`
+                    <div class="ai-forward-user-item" data-user="${frappe.utils.escape_html(u.name)}">
+                        ${avatar}
+                        <div class="ai-forward-user-info">
+                            <span class="ai-forward-user-name">${frappe.utils.escape_html(u.full_name || u.name)}</span>
+                            <span class="ai-forward-user-email">${frappe.utils.escape_html(u.name)}</span>
+                        </div>
+                    </div>
+                `);
+                $item.on("click", () => {
+                    this.$forward_modal.hide();
+                    this.$forward_modal.find(".ai-forward-note-wrap").show();
+                    this.$forward_modal.find(".ai-forward-header span").text("Forward to...");
+                    this._open_dm_conversation(u.name, u.full_name || u.name);
+                });
+                $list.append($item);
+            }
+        } catch (e) {
+            this.$forward_modal.find(".ai-forward-user-list").html(
+                '<div class="ai-forward-loading">Could not load users</div>'
+            );
+        }
+    }
+
+    // ── Send DM ──────────────────────────────────────────────────────
+
+    async _send_dm(message) {
+        this.$input.val("").trigger("input");
+
+        const reply_to = this._dm_reply_to || null;
+        const reply_opts = {};
+        if (reply_to) {
+            // Find the reply text from the reply bar
+            reply_opts.reply_to_text = this.$reply_bar.find(".ai-reply-bar-text").text();
+        }
+        this._cancel_reply();
+        this._dm_reply_to = null;
+
+        // Optimistic UI: show the message immediately
+        this._append_dm_bubble("sent", message, "You", reply_opts);
+
+        try {
+            await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.send_dm",
+                args: {
+                    to_user: this._dm_user,
+                    message: message,
+                    reply_to: reply_to,
+                    company: this._current_company || "",
+                },
+                async: true,
+            });
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not send message"), indicator: "red" });
         }
     }
 
