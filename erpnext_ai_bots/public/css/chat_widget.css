@@ -1959,14 +1959,59 @@
     border-left-color: var(--ai-warning);
 }
 
-.ai-msg-forwarded::before {
-    content: "FORWARDED";
-    display: block;
-    font-size: 9px;
-    font-weight: 700;
+.ai-msg-forwarded .ai-fwd-note {
+    font-size: 13px;
+    color: var(--ai-text);
+    margin-bottom: 8px;
+}
+
+.ai-fwd-card {
+    border: 1px solid var(--ai-border-strong);
+    border-left: 3px solid var(--ai-warning);
+    border-radius: var(--ai-radius-sm);
+    overflow: hidden;
+    background: rgba(245, 158, 11, 0.04);
+}
+
+.ai-fwd-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: rgba(245, 158, 11, 0.08);
+    font-size: 11px;
     color: var(--ai-warning);
-    letter-spacing: 0.08em;
-    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.ai-fwd-card-header strong {
+    color: var(--ai-text-bright);
+}
+
+.ai-fwd-card-body {
+    padding: 10px 12px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--ai-text);
+}
+
+.ai-fwd-card-body p { margin: 0 0 8px; }
+.ai-fwd-card-body p:last-child { margin-bottom: 0; }
+
+/* Forwarded in user bubbles (sent forwards) */
+.ai-msg-user.ai-msg-forwarded .ai-fwd-card {
+    border-color: rgba(255, 255, 255, 0.2);
+    border-left-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ai-msg-user.ai-msg-forwarded .ai-fwd-card-header {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.ai-msg-user.ai-msg-forwarded .ai-fwd-card-body {
+    color: rgba(255, 255, 255, 0.9);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

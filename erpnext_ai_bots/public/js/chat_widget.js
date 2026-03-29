@@ -679,14 +679,22 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             }
         });
 
-        // @ mention popup in DM mode
+        // @ mention autocomplete in DM mode
         this.$input.on("input", () => {
             if (this._dm_mode && this._dm_user) {
                 const val = this.$input.val();
-                // Show popup when user types @ at start or after space
-                if (val === "@" || val.endsWith(" @") || /\s@$/.test(val)) {
-                    this._show_mention_popup();
-                } else if (!val.includes("@")) {
+                // Detect @mention pattern: @ at start or after space, with optional partial name
+                const mention_match = val.match(/(?:^|\s)@(\w*)$/);
+                if (mention_match) {
+                    const partial = mention_match[1].toLowerCase();
+                    const ai_name = (this._ai_name || "AI Oracle").toLowerCase();
+                    // Show popup if partial matches the AI name or is empty (just @)
+                    if (!partial || ai_name.startsWith(partial) || "ai".startsWith(partial)) {
+                        this._show_mention_popup();
+                    } else {
+                        this._hide_mention_popup();
+                    }
+                } else {
                     this._hide_mention_popup();
                 }
             }
@@ -2297,10 +2305,10 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         `);
 
         $item.on("click", () => {
-            // Replace the trailing @ with @<ai_name>
+            // Replace the @partial with @<ai_name>
             const val = this.$input.val();
-            const newVal = val.replace(/@$/, "@" + ai_name + " ");
-            this.$input.val(newVal).trigger("input").focus();
+            const newVal = val.replace(/(^|\s)@\w*$/, "$1@" + ai_name + " ");
+            this.$input.val(newVal).focus();
             this._hide_mention_popup();
         });
 
@@ -2557,18 +2565,39 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             $msg.append($quote);
         }
 
-        // Forward badge
-        if (text.includes("--- Forwarded from")) {
+        // Forward detection and rich rendering
+        const fwd_match = text.match(/^(?:([\s\S]*?)\n\n)?--- Forwarded from (You|AI Assistant) ---\n\n?([\s\S]*)$/);
+        if (fwd_match) {
             $msg.addClass("ai-msg-forwarded");
-        }
+            const fwd_note = (fwd_match[1] || "").trim();
+            const fwd_from = fwd_match[2];
+            const fwd_body = (fwd_match[3] || "").trim();
 
-        // Render markdown for received messages (forwards, AI responses),
-        // plain text for sent messages
-        if (role === "received") {
+            // Optional note above
+            if (fwd_note) {
+                $msg.append($('<div class="ai-fwd-note"></div>').text(fwd_note));
+            }
+
+            // Forwarded card
+            const $card = $(`<div class="ai-fwd-card">
+                <div class="ai-fwd-card-header">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 17 20 12 15 7"/>
+                        <path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
+                    </svg>
+                    <span>Forwarded from <strong>${frappe.utils.escape_html(fwd_from)}</strong></span>
+                </div>
+                <div class="ai-fwd-card-body"></div>
+            </div>`);
+            $card.find(".ai-fwd-card-body").html(erpnext_ai_bots.render_markdown(fwd_body));
+            $msg.append($card);
+        } else if (role === "received") {
+            // Regular received message — render markdown
             $msg.append($('<div class="ai-dm-content"></div>').html(
                 erpnext_ai_bots.render_markdown(text)
             ));
         } else {
+            // Sent message — plain text
             $msg.append($('<span class="ai-msg-text"></span>').text(text));
         }
 
