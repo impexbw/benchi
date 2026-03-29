@@ -88,6 +88,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    overscroll-behavior: contain;
     transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
                 height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     font-family: var(--ai-font);
@@ -463,6 +464,7 @@
 .ai-chat-messages {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 20px 20px;
     display: flex;
     flex-direction: column;
