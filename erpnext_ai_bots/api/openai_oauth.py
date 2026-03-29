@@ -205,10 +205,10 @@ def oauth_status():
     Also checks for a BYOK API key — if one is set, the user is effectively
     connected even without OAuth tokens.
     """
-    # Check BYOK API key first
+    # Check BYOK API key first (may not be set — that's fine)
     try:
         settings = frappe.get_cached_doc("AI Bot Settings")
-        api_key = settings.get_password("api_key")
+        api_key = settings.get_password("api_key") if settings.api_key else None
         if api_key:
             return {
                 "connected": True,
