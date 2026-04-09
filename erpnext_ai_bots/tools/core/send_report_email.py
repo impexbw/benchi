@@ -65,7 +65,7 @@ class SendReportEmailTool(BaseTool):
                 "properties": {
                     "title": {"type": "string"},
                     "headers": {"type": "array", "items": {"type": "string"}},
-                    "rows": {"type": "array", "items": {"type": "array"}},
+                    "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
                     "highlight_col": {"type": "integer"},
                 },
             },
