@@ -58,6 +58,7 @@ class GetRevenueSummaryTool(BaseTool):
 
         filters = {
             "docstatus": 1,
+            "is_return": 0,
             "posting_date": ["between", [from_date, to_date]],
         }
         # Only apply the default company filter when no territory or warehouse
