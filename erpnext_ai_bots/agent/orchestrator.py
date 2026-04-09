@@ -415,7 +415,7 @@ class Orchestrator:
             )
             return
 
-        api_key = self.settings.get_password("api_key")
+        api_key = self.settings.get_password("api_key") if self.settings.api_key else None
         if not api_key:
             self.stream_bridge.send_error(
                 "No API key configured. Set it in AI Bot Settings."

@@ -835,7 +835,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
         // Close company dropdown on outside click
         $(document).on("mousedown.ai_company", (e) => {
-            if (!$(e.target).closest(".ai-company-selector").length) {
+            if (!$(e.target).closest(".ai-company-selector, .ai-company-dropdown").length) {
                 this.$company_dropdown.hide();
             }
         });
@@ -1577,6 +1577,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 }
             }, 120000);
         } catch (err) {
+            console.error("AI Chat send_message error:", err);
             this._finish_streaming();
             this._show_error("Something went wrong — please try again");
         }
@@ -1726,7 +1727,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 },
                 onError: (error) => {
                     this._finish_streaming();
-                    this._show_error("Something went wrong — please try again");
+                    this._show_error(error || "Something went wrong — please try again");
                 },
             }
         );

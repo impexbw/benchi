@@ -24,6 +24,7 @@ TOOL_MAP = {
     "accounting.get_profit_and_loss": "erpnext_ai_bots.tools.accounting.profit_and_loss.GetProfitAndLossTool",
     "accounting.create_journal_entry": "erpnext_ai_bots.tools.accounting.journal_entry.CreateJournalEntryTool",
     "accounting.get_account_balance": "erpnext_ai_bots.tools.accounting.account_balance.GetAccountBalanceTool",
+    "accounting.get_gross_margin": "erpnext_ai_bots.tools.accounting.gross_margin.GetGrossMarginTool",
 
     # HR tools
     "hr.get_leave_balance": "erpnext_ai_bots.tools.hr.leave_balance.GetLeaveBalanceTool",
@@ -39,6 +40,8 @@ TOOL_MAP = {
     "stock.get_item_info": "erpnext_ai_bots.tools.stock.item_info.GetItemInfoTool",
     "stock.get_reorder_levels": "erpnext_ai_bots.tools.stock.reorder.GetReorderLevelsTool",
     "stock.create_item": "erpnext_ai_bots.tools.stock.create_item.CreateItemTool",
+    "stock.get_inventory_days": "erpnext_ai_bots.tools.stock.inventory_days.GetInventoryDaysTool",
+    "stock.get_stock_turnover": "erpnext_ai_bots.tools.stock.stock_turnover.GetStockTurnoverTool",
 
     # Sales tools
     "sales.get_pipeline": "erpnext_ai_bots.tools.sales.pipeline.GetPipelineTool",
@@ -47,6 +50,8 @@ TOOL_MAP = {
     "sales.get_customer_info": "erpnext_ai_bots.tools.sales.customer_info.GetCustomerInfoTool",
     "sales.get_revenue_summary": "erpnext_ai_bots.tools.sales.revenue_summary.GetRevenueSummaryTool",
     "sales.create_customer": "erpnext_ai_bots.tools.sales.create_customer.CreateCustomerTool",
+    "sales.get_branch_performance": "erpnext_ai_bots.tools.sales.branch_performance.GetBranchPerformanceTool",
+    "sales.get_sales_dashboard": "erpnext_ai_bots.tools.sales.sales_dashboard.GetSalesDashboardTool",
 
     # Meta tools
     "meta.spawn_subagent": "erpnext_ai_bots.tools.meta.spawn_subagent.SpawnSubagentTool",
