@@ -112,11 +112,20 @@ class ToolRegistry:
         return self._cache[namespaced_name]
 
     def get_all_schemas(self) -> list:
-        """Return tool schemas for ALL registered tools (Anthropic format)."""
+        """Return tool schemas for ALL registered tools (Anthropic format).
+        Skips tools that fail to import so one broken tool doesn't crash everything.
+        """
         schemas = []
         for namespaced_name in TOOL_MAP:
-            tool = self.get_tool(namespaced_name)
-            schemas.append(tool.schema())
+            try:
+                tool = self.get_tool(namespaced_name)
+                schemas.append(tool.schema())
+            except Exception as e:
+                import frappe
+                frappe.log_error(
+                    title=f"Tool load failed: {namespaced_name}",
+                    message=str(e),
+                )
         return schemas
 
     def get_openai_schemas(self) -> list:
@@ -132,11 +141,20 @@ class ToolRegistry:
         Note: name, description, parameters are top-level siblings of type,
         NOT nested inside a "function" key. The Responses API uses a flat structure.
         Also: dots in names are replaced with underscores (API restriction).
+        Skips tools that fail to import.
         """
         schemas = []
         for namespaced_name in TOOL_MAP:
-            tool = self.get_tool(namespaced_name)
-            anthropic_schema = tool.schema()
+            try:
+                tool = self.get_tool(namespaced_name)
+                anthropic_schema = tool.schema()
+            except Exception as e:
+                import frappe
+                frappe.log_error(
+                    title=f"Tool load failed: {namespaced_name}",
+                    message=str(e),
+                )
+                continue
             # Responses API doesn't allow dots in function names
             safe_name = anthropic_schema["name"].replace(".", "_")
             openai_schema = {
