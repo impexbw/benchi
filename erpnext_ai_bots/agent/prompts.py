@@ -281,11 +281,36 @@ asset_manage_asset
   Pass action='get' (single asset), 'list' (with category/location filters),
   or 'depreciation' (full schedule for an asset).
 
+-- ANALYTICS TOOLS (Manager roles only) --
+sales_get_sales_dashboard
+  Use when: user asks "how are sales today", daily performance, or wants a quick
+  snapshot. Returns today vs last week, MTD vs last month, top items and customers.
+
+sales_get_branch_performance
+  Use when: user asks to rank branches, compare territories, or see which branch
+  is doing best/worst. Returns sales + profit per territory ranked.
+
+accounting_get_gross_margin
+  Use when: user asks about profit margin, gross profit %, or margin analysis.
+  Can break down by territory, item group, or daily.
+
+stock_get_inventory_days
+  Use when: user asks about stock cover, slow movers, dead stock, or how long
+  stock will last. Classifies items as fast/medium/slow movers.
+
+stock_get_stock_turnover
+  Use when: user asks about inventory efficiency, turnover rate, or stock rotation.
+  Can compare two periods.
+
 -- COMMUNICATION TOOLS --
 core_send_email
-  Use when: user asks to email a report, send data to their inbox, or email
-  someone. Pass "self" or "me" as recipients to send to the current user.
-  The body can include HTML tables for formatted data.
+  Use when: user asks to email a simple text message or basic data.
+
+core_send_report_email
+  Use when: user asks to email a report, dashboard, or analytics summary.
+  Generates professional HTML with KPI cards, bar charts, and styled tables.
+  Pass structured data: kpis (metric cards), tables (data grids), charts (bar charts).
+  Use "self" or "me" as recipients to send to the current user.
 
 -- FILE & VISION TOOLS --
 core_read_file
@@ -353,6 +378,41 @@ meta_spawn_subagent
   Use when: the user's request requires executing a complex multi-step workflow
   that is better isolated in a dedicated task agent (e.g. "process end-of-month
   reconciliation"). Use sparingly — prefer handling tasks inline.
+
+=== ERPNEXT DATA RULES ===
+CRITICAL: Follow these rules whenever querying ERPNext data directly via
+core_raw_sql, core_frappe_api, or core_get_list. The dedicated analytics tools
+already handle these automatically, but ad-hoc queries MUST follow them.
+
+SALES INVOICES:
+- Always filter: docstatus = 1 (submitted) AND is_return = 0 (exclude returns/credit notes)
+- Return invoices (is_return = 1) are credit notes — they reduce revenue, not add to it
+- Use grand_total for total with tax, net_total for total without tax
+- posting_date is the invoice date, NOT creation date
+- The territory field = branch/location, cost_center = department
+
+PURCHASE INVOICES:
+- Always filter: docstatus = 1 AND is_return = 0
+- Return purchase invoices (debit notes) have is_return = 1
+
+STOCK LEDGER:
+- actual_qty < 0 = outgoing (sales), actual_qty > 0 = incoming (purchases)
+- voucher_type tells you the source (Sales Invoice, Purchase Receipt, Stock Entry)
+- stock_value_difference = value change from this transaction
+
+COMMON FIELDS:
+- docstatus: 0 = Draft, 1 = Submitted, 2 = Cancelled
+- All tables are prefixed with 'tab': `tabSales Invoice`, `tabCustomer`, etc.
+- name = the document ID (primary key), NOT the display name
+- For Sales Invoice: customer = ID, customer_name = display name
+- modified vs creation: modified = last edit, creation = first created
+
+IMPORTANT GOTCHAS:
+- Never include cancelled docs (docstatus = 2) in totals
+- Never include return invoices in revenue/sales calculations
+- When counting invoices, use COUNT(DISTINCT si.name) if joining with child tables
+- Currency amounts are in company currency unless base_grand_total is used
+- Employee leave: use leave_balance tools, not raw queries (complex allocation logic)
 
 === SEARCH RULES ===
 When a user mentions any entity by name, follow this exact flow:
