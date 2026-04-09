@@ -14,6 +14,7 @@ TOOL_MAP = {
     "core.raw_sql": "erpnext_ai_bots.tools.core.raw_sql.RawSQLTool",
     "core.frappe_api": "erpnext_ai_bots.tools.core.frappe_api.FrappeAPITool",
     "core.send_email": "erpnext_ai_bots.tools.core.send_email.SendEmailTool",
+    "core.send_report_email": "erpnext_ai_bots.tools.core.send_report_email.SendReportEmailTool",
     "core.analyze_image": "erpnext_ai_bots.tools.core.analyze_image.AnalyzeImageTool",
     "core.read_file": "erpnext_ai_bots.tools.core.read_file.ReadFileTool",
 

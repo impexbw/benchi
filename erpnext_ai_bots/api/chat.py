@@ -95,13 +95,30 @@ def _has_openai_token() -> bool:
 
 @frappe.whitelist()
 def get_companies():
-    """Get companies the current user has access to."""
+    """Get all companies the current user has read access to.
+
+    System Managers and Administrators see every company. Other users see
+    companies permitted by standard Frappe User Permissions.
+    """
+    user = frappe.session.user
+    roles = frappe.get_roles(user)
+    # System Manager / Administrator bypass User Permissions
+    skip_perms = user == "Administrator" or "System Manager" in roles
+
+    if skip_perms:
+        return frappe.get_all(
+            "Company",
+            fields=["name", "company_name", "default_currency"],
+            order_by="name asc",
+            limit_page_length=0,
+            ignore_permissions=True,
+        )
+
     return frappe.get_all(
         "Company",
-        filters={},
         fields=["name", "company_name", "default_currency"],
         order_by="name asc",
-        limit_page_length=20,
+        limit_page_length=0,
     )
 
 
