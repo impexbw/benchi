@@ -1,3 +1,141 @@
+// ── Chart helpers (standalone — must be before the class) ────────────────────
+
+function _parseChartConfig(raw) {
+    var config = { type: 'bar', title: '', labels: [], datasets: [], colors: [] };
+    var lines = raw.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var colonIdx = line.indexOf(':');
+        if (colonIdx === -1) continue;
+        var key = line.substring(0, colonIdx).trim().toLowerCase();
+        var val = line.substring(colonIdx + 1).trim();
+
+        if (key === 'type') {
+            config.type = val;
+        } else if (key === 'title') {
+            config.title = val;
+        } else if (key === 'labels') {
+            config.labels = val.split(',').map(function(s) { return s.trim(); });
+        } else if (key === 'data') {
+            config.datasets.push({
+                label: config.title,
+                data: val.split(',').map(function(s) { return parseFloat(s.trim()); }),
+            });
+        } else if (key === 'color') {
+            config.colors.push(val);
+        } else if (key === 'dataset') {
+            // Format: "Label | 1,2,3 | #color"
+            var parts = val.split('|').map(function(s) { return s.trim(); });
+            config.datasets.push({
+                label: parts[0] || '',
+                data: (parts[1] || '').split(',').map(function(s) { return parseFloat(s.trim()); }),
+            });
+            if (parts[2]) config.colors.push(parts[2]);
+        }
+    }
+    return config;
+}
+
+function _renderChart(canvas, raw) {
+    var config = _parseChartConfig(raw);
+    var rawAccent = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ai-accent');
+    var accent = (rawAccent && rawAccent.trim()) ? rawAccent.trim() : '#8b5cf6';
+
+    // Obsidian Console color palette
+    var palette = [
+        accent, '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#f97316'
+    ];
+
+    // Assign custom colors from config.colors into each dataset
+    for (var i = 0; i < config.colors.length && i < config.datasets.length; i++) {
+        config.datasets[i]._color = config.colors[i];
+    }
+
+    var isPie = config.type === 'pie' || config.type === 'doughnut';
+    var isHorizontal = config.type === 'horizontalBar';
+    var chartType = isHorizontal ? 'bar' : config.type;
+
+    var datasets = config.datasets.map(function(ds, idx) {
+        var color = ds._color || palette[idx % palette.length];
+        var result = {
+            label: ds.label,
+            data: ds.data,
+            borderWidth: isPie ? 0 : 2,
+        };
+        if (isPie) {
+            result.backgroundColor = ds.data.map(function(_, j) {
+                return palette[j % palette.length] + 'cc';
+            });
+            result.borderColor = 'transparent';
+        } else {
+            result.backgroundColor = color + '33';
+            result.borderColor = color;
+            if (config.type === 'line') {
+                result.tension = 0.3;
+                result.fill = true;
+                result.pointRadius = 4;
+                result.pointBackgroundColor = color;
+            }
+        }
+        return result;
+    });
+
+    // Destroy any existing chart on this canvas before creating a new one
+    var existingChart = Chart.getChart(canvas);
+    if (existingChart) existingChart.destroy();
+
+    new Chart(canvas, {
+        type: chartType,
+        data: { labels: config.labels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            indexAxis: isHorizontal ? 'y' : 'x',
+            plugins: {
+                title: {
+                    display: !!config.title,
+                    text: config.title,
+                    color: '#e4e4e7',
+                    font: { size: 14, weight: '600' },
+                    padding: { bottom: 12 },
+                },
+                legend: {
+                    display: config.datasets.length > 1 || isPie,
+                    labels: {
+                        color: '#a1a1aa',
+                        font: { size: 11 },
+                        boxWidth: 12,
+                        padding: 12,
+                    },
+                },
+                tooltip: {
+                    backgroundColor: '#1e1e24',
+                    titleColor: '#e4e4e7',
+                    bodyColor: '#a1a1aa',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    cornerRadius: 6,
+                    padding: 10,
+                },
+            },
+            scales: isPie ? {} : {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                    ticks: { color: '#71717a', font: { size: 11 } },
+                },
+                y: {
+                    grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                    ticks: { color: '#71717a', font: { size: 11 } },
+                },
+            },
+        },
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 frappe.provide("erpnext_ai_bots");
 
 // ── Markdown table post-processor ───────────────────────────────────────────
@@ -7,6 +145,14 @@ frappe.provide("erpnext_ai_bots");
 
 erpnext_ai_bots.render_markdown = function (text) {
     if (!text) return "";
+
+    // Step 0: Extract ```chart blocks BEFORE markdown processing so the
+    // backtick fences are not mangled by marked.js.
+    var charts = [];
+    text = text.replace(/```chart\n([\s\S]*?)```/g, function(match, body) {
+        charts.push(body.trim());
+        return 'AICHART' + (charts.length - 1) + 'END';
+    });
 
     // First pass: use Frappe's renderer
     let html = frappe.markdown(text) || "";
@@ -49,8 +195,26 @@ erpnext_ai_bots.render_markdown = function (text) {
         }
     );
 
-    // Third pass: metric cards DISABLED — tables are cleaner for ERPNext data.
-    // All data renders as professional tables with styled headers.
+    // Third pass: Add code block headers with language label + copy button (ChatGPT style)
+    html = html.replace(
+        /<pre><code(?:\s+class="(?:language-)?(\w+)")?>([\s\S]*?)<\/code><\/pre>/g,
+        function(match, lang, code) {
+            var langLabel = lang || 'code';
+            var uid = 'ai-cb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+            var header = '<div class="ai-code-header">'
+                + '<span class="ai-code-lang">' + langLabel + '</span>'
+                + '<button class="ai-code-copy" data-code-id="' + uid + '" onclick="'
+                + 'var el=document.getElementById(\'' + uid + '\');'
+                + 'if(el){navigator.clipboard.writeText(el.textContent).then(function(){'
+                + 'var b=document.querySelector(\'[data-code-id=&quot;' + uid + '&quot;]\');'
+                + 'b.classList.add(\'copied\');b.innerHTML=\'&#10003; Copied\';'
+                + 'setTimeout(function(){b.classList.remove(\'copied\');b.innerHTML=\'Copy\';},2000);'
+                + '})}">'
+                + 'Copy</button>'
+                + '</div>';
+            return '<pre>' + header + '<code id="' + uid + '">' + code + '</code></pre>';
+        }
+    );
 
     // Fourth pass: convert ERPNext document IDs into clickable links.
     // Maps document prefixes to their ERPNext URL route slugs.
@@ -91,6 +255,34 @@ erpnext_ai_bots.render_markdown = function (text) {
         }
     );
 
+    // Final step: replace chart placeholders with canvas elements, then
+    // schedule Chart.js initialisation after the bubble is in the DOM.
+    if (charts.length) {
+        var _timestamp = Date.now();
+        for (var _ci = 0; _ci < charts.length; _ci++) {
+            var chart_id = 'ai-chart-' + _timestamp + '-' + _ci;
+            // Replace placeholder — may be wrapped in <p>, <strong>, or bare
+            html = html.replace(
+                new RegExp('<p>\\s*(?:<strong>)?\\s*AICHART' + _ci + 'END\\s*(?:</strong>)?\\s*</p>', 'g'),
+                '<div class="ai-chart-container"><canvas id="' + chart_id + '"></canvas></div>'
+            );
+            html = html.replace(
+                new RegExp('(?:<strong>)?AICHART' + _ci + 'END(?:</strong>)?', 'g'),
+                '<div class="ai-chart-container"><canvas id="' + chart_id + '"></canvas></div>'
+            );
+
+            // Capture loop variables for the async callback
+            (function(id, raw) {
+                setTimeout(function() {
+                    var canvas = document.getElementById(id);
+                    if (canvas && typeof Chart !== 'undefined') {
+                        _renderChart(canvas, raw);
+                    }
+                }, 100);
+            })(chart_id, charts[_ci]);
+        }
+    }
+
     return html;
 };
 
@@ -120,10 +312,32 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._active_category = "All";   // sidebar filter tab
         this._all_sessions = [];         // cached sessions array
         this._ctx_menu_target = null;    // session id under context menu
+        this._last_message = null;       // last sent message text, for retry
+        this._loading_session = false;   // guard against concurrent _load_session calls
+        this._search_query = "";         // sidebar session search filter
+        this._current_company = null;    // active company context
+        this._all_companies = [];        // cached companies list
+        // Feature 16: File attachments
+        this._pending_attachment = null; // uploaded file waiting to be sent
+        // Feature 17: Voice input
+        this._is_recording = false;
+        this._recognition = null;
+        // Feature 17: ElevenLabs TTS
+        this._elevenlabs_key = "";
+        this._elevenlabs_voice_id = "21m00Tcm4TlvDq8ikWAM";
+        // Feature: Reply, Forward, DM
+        this._reply_to = null;          // { index, role, text } — message being replied to
+        this._message_index = 0;        // running index for visible messages
+        this._dm_mode = false;          // true when viewing DMs
+        this._dm_user = null;           // currently open DM conversation partner
+        this._dm_conversations = [];    // cached DM conversation list
+        this._dm_unread_count = 0;      // total unread DMs
         this.render();
         this.bind_events();
         this._load_last_session();
         this._load_accent_color();
+        this._load_companies();
+        this._load_elevenlabs_config();
     }
 
     // ── Accent color ─────────────────────────────────────────────────
@@ -144,6 +358,62 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         }
     }
 
+    // ── Company selector ────────────────────────────────────────────
+
+    async _load_companies() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.get_companies",
+                async: true,
+            });
+            this._all_companies = r.message || [];
+            // Set default company from Frappe user defaults
+            const default_co = frappe.defaults.get_default("company");
+            if (!this._current_company && this._all_companies.length) {
+                const found = this._all_companies.find(c => c.name === default_co);
+                this._current_company = found ? found.name : this._all_companies[0].name;
+            }
+            this._render_company_badge();
+        } catch (e) {
+            // Silently fail — company context falls back to server-side default
+        }
+    }
+
+    _render_company_badge() {
+        const label = this._current_company || "...";
+        this.$company_badge.text(label);
+        this._render_company_dropdown();
+    }
+
+    _render_company_dropdown() {
+        this.$company_dropdown.empty();
+        for (const co of this._all_companies) {
+            const is_active = co.name === this._current_company;
+            const $opt = $(
+                `<div class="ai-company-option${is_active ? " active" : ""}"
+                      data-name="${frappe.utils.escape_html(co.name)}">
+                    ${frappe.utils.escape_html(co.company_name || co.name)}
+                </div>`
+            );
+            $opt.on("click", () => {
+                this.$company_dropdown.hide();
+                if (co.name === this._current_company) return;
+                const old = this._current_company;
+                this._current_company = co.name;
+                this._render_company_badge();
+                // System message so the user sees the switch in context
+                const $sys = $(
+                    `<div class="ai-msg ai-msg-bot ai-msg-system-note">
+                        Switched to <strong>${frappe.utils.escape_html(co.company_name || co.name)}</strong>
+                    </div>`
+                );
+                this.$messages.append($sys);
+                this._scroll_bottom();
+            });
+            this.$company_dropdown.append($opt);
+        }
+    }
+
     // ── DOM ─────────────────────────────────────────────────────────
 
     render() {
@@ -159,13 +429,32 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel = $(`
             <div class="ai-chat-panel" style="display:none">
                 <div class="ai-chat-header">
-                    <span class="ai-chat-title">AI Assistant</span>
+                    <div class="ai-chat-header-left">
+                        <span class="ai-chat-title">AI Assistant</span>
+                        <span class="ai-company-badge" title="Click to switch company">...</span>
+                    </div>
                     <div class="ai-chat-header-actions">
+                        <button class="ai-chat-toggle-sidebar btn btn-xs" title="Toggle sidebar" style="display:none">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <line x1="9" y1="3" x2="9" y2="21"/>
+                            </svg>
+                        </button>
                         <button class="ai-chat-new-session btn btn-xs" title="New conversation">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                                  stroke="currentColor" stroke-width="2">
                                 <line x1="12" y1="5" x2="12" y2="19"/>
                                 <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </button>
+                        <button class="ai-chat-help btn btn-xs" title="Help — see all commands">?</button>
+                        <button class="ai-chat-export btn btn-xs" title="Export conversation">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
                             </svg>
                         </button>
                         <button class="ai-chat-expand btn btn-xs" title="Expand">
@@ -207,25 +496,95 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                                 New Chat
                             </button>
                         </div>
-                        <div class="ai-sidebar-category-tabs">
-                            ${erpnext_ai_bots.CATEGORIES.map(c =>
-                                `<button class="ai-cat-tab${c === "All" ? " active" : ""}" data-cat="${c}">${c}</button>`
-                            ).join("")}
+                        <div class="ai-sidebar-search-wrap">
+                            <input type="text" class="ai-sidebar-search form-control form-control-sm"
+                                   placeholder="Search conversations..." />
                         </div>
-                        <div class="ai-sidebar-session-list"></div>
+                        <div class="ai-sidebar-mode-tabs">
+                            <button class="ai-mode-tab active" data-mode="ai">AI Chats</button>
+                            <button class="ai-mode-tab" data-mode="dm">DMs <span class="ai-dm-badge" style="display:none">0</span></button>
+                        </div>
+                        <div class="ai-sidebar-ai-section">
+                            <div class="ai-sidebar-category-tabs">
+                                ${erpnext_ai_bots.CATEGORIES.map(c =>
+                                    `<button class="ai-cat-tab${c === "All" ? " active" : ""}" data-cat="${c}">${c}</button>`
+                                ).join("")}
+                            </div>
+                            <div class="ai-sidebar-session-list"></div>
+                        </div>
+                        <div class="ai-sidebar-dm-section" style="display:none">
+                            <div class="ai-dm-user-search-wrap">
+                                <input type="text" class="ai-dm-user-search form-control form-control-sm"
+                                       placeholder="Search users..." />
+                            </div>
+                            <div class="ai-dm-conversation-list"></div>
+                            <button class="ai-dm-new-chat-btn btn btn-sm">+ New Message</button>
+                        </div>
                     </div>
 
                     <!-- Chat area -->
                     <div class="ai-chat-main">
-                        <div class="ai-chat-messages"></div>
+                        <div class="ai-chat-messages">
+                            <div class="ai-templates-grid">
+                                <div class="ai-template-card" data-prompt="Show me today's sales summary">
+                                    <span class="ai-template-icon">📊</span>
+                                    <span class="ai-template-text">Today's Sales</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="List all overdue invoices">
+                                    <span class="ai-template-icon">⚠️</span>
+                                    <span class="ai-template-text">Overdue Invoices</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="What is our current stock level for low-stock items?">
+                                    <span class="ai-template-icon">📦</span>
+                                    <span class="ai-template-text">Low Stock Alert</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="Show me the top 10 customers by revenue this month">
+                                    <span class="ai-template-icon">👥</span>
+                                    <span class="ai-template-text">Top Customers</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="What is our bank balance across all accounts?">
+                                    <span class="ai-template-icon">🏦</span>
+                                    <span class="ai-template-text">Bank Balances</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="Create a quotation">
+                                    <span class="ai-template-icon">📝</span>
+                                    <span class="ai-template-text">New Quotation</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="ai-chat-tool-indicator" style="display:none">
                             <div class="ai-tool-spinner"></div>
                             <span class="ai-tool-name"></span>
                         </div>
+                        <!-- Reply preview bar -->
+                        <div class="ai-reply-bar" style="display:none">
+                            <div class="ai-reply-bar-content">
+                                <span class="ai-reply-bar-label">Replying to</span>
+                                <span class="ai-reply-bar-text"></span>
+                            </div>
+                            <button class="ai-reply-bar-close">&times;</button>
+                        </div>
                         <div class="ai-chat-input-area">
+                            <button class="ai-chat-attach btn btn-xs" title="Attach file">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="2">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                                </svg>
+                            </button>
+                            <input type="file" class="ai-chat-file-input" style="display:none"
+                                   multiple accept="image/*,.pdf,.csv,.xlsx,.xls,.txt,.json,.docx,.doc,.tsv,.md,.log" />
                             <textarea class="ai-chat-input"
                                 placeholder="Ask about your ERPNext data..."
                                 rows="1"></textarea>
+                            <button class="ai-chat-voice btn btn-xs" title="Voice input">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="2">
+                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                    <line x1="12" y1="19" x2="12" y2="23"/>
+                                    <line x1="8" y1="23" x2="16" y2="23"/>
+                                </svg>
+                            </button>
                             <button class="ai-chat-send btn btn-primary btn-sm">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                                      stroke="currentColor" stroke-width="2">
@@ -248,11 +607,58 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             </div>
         `).appendTo("body");
 
-        this.$messages       = this.$panel.find(".ai-chat-messages");
-        this.$input          = this.$panel.find(".ai-chat-input");
-        this.$tool_indicator = this.$panel.find(".ai-chat-tool-indicator");
-        this.$sidebar        = this.$panel.find(".ai-chat-sidebar");
-        this.$session_list   = this.$panel.find(".ai-sidebar-session-list");
+        // Message context menu (reply / forward)
+        this.$msg_ctx_menu = $(`
+            <div class="ai-msg-ctx-menu" style="display:none">
+                <button class="ai-msg-ctx-reply">Reply</button>
+                <button class="ai-msg-ctx-forward">Forward</button>
+                <button class="ai-msg-ctx-copy">Copy</button>
+            </div>
+        `).appendTo("body");
+
+        // Forward user picker modal
+        this.$forward_modal = $(`
+            <div class="ai-forward-modal" style="display:none">
+                <div class="ai-forward-modal-inner">
+                    <div class="ai-forward-header">
+                        <span>Forward to...</span>
+                        <button class="ai-forward-close">&times;</button>
+                    </div>
+                    <input type="text" class="ai-forward-search form-control form-control-sm"
+                           placeholder="Search users..." />
+                    <div class="ai-forward-user-list"></div>
+                    <div class="ai-forward-note-wrap">
+                        <input type="text" class="ai-forward-note form-control form-control-sm"
+                               placeholder="Add a note (optional)..." />
+                    </div>
+                </div>
+            </div>
+        `).appendTo("body");
+
+        // Export dropdown (shared, appended to body)
+        this.$export_menu = $(`
+            <div class="ai-export-menu" style="display:none">
+                <button class="ai-export-html">Export as HTML (Print / PDF)</button>
+                <button class="ai-export-csv">Export as CSV</button>
+            </div>
+        `).appendTo("body");
+
+        this.$messages         = this.$panel.find(".ai-chat-messages");
+        this.$input            = this.$panel.find(".ai-chat-input");
+        this.$tool_indicator   = this.$panel.find(".ai-chat-tool-indicator");
+        this.$sidebar          = this.$panel.find(".ai-chat-sidebar");
+        this.$session_list     = this.$panel.find(".ai-sidebar-session-list");
+        this.$company_badge    = this.$panel.find(".ai-company-badge");
+        this.$company_dropdown = $('<div class="ai-company-dropdown"></div>').appendTo("body");
+        // @ mention popup
+        this.$mention_popup = $(`
+            <div class="ai-mention-popup" style="display:none"></div>
+        `).appendTo("body");
+
+        this.$reply_bar        = this.$panel.find(".ai-reply-bar");
+        this.$dm_section       = this.$panel.find(".ai-sidebar-dm-section");
+        this.$dm_conv_list     = this.$panel.find(".ai-dm-conversation-list");
+        this.$ai_section       = this.$panel.find(".ai-sidebar-ai-section");
     }
 
     // ── Events ──────────────────────────────────────────────────────
@@ -262,13 +668,40 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$panel.find(".ai-chat-close").on("click", () => this.toggle());
         this.$panel.find(".ai-chat-new-session").on("click", () => this.new_session());
         this.$panel.find(".ai-sidebar-new-btn").on("click", () => this.new_session());
+        this.$panel.find(".ai-chat-toggle-sidebar").on("click", () => this._toggle_sidebar());
         this.$panel.find(".ai-chat-expand").on("click", () => this.toggle_expand());
         this.$panel.find(".ai-chat-send").on("click", () => this.send());
 
         this.$input.on("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
+                // If mention popup is open, select it instead of sending
+                if (this.$mention_popup.is(":visible")) {
+                    this.$mention_popup.find(".ai-mention-item").first().trigger("click");
+                    return;
+                }
                 this.send();
+            }
+        });
+
+        // @ mention autocomplete in DM mode
+        this.$input.on("input", () => {
+            if (this._dm_mode && this._dm_user) {
+                const val = this.$input.val();
+                // Detect @mention pattern: @ at start or after space, with optional partial name
+                const mention_match = val.match(/(?:^|\s)@(\w*)$/);
+                if (mention_match) {
+                    const partial = mention_match[1].toLowerCase();
+                    const ai_name = (this._ai_name || "AI Oracle").toLowerCase();
+                    // Show popup if partial matches the AI name or is empty (just @)
+                    if (!partial || ai_name.startsWith(partial) || "ai".startsWith(partial)) {
+                        this._show_mention_popup();
+                    } else {
+                        this._hide_mention_popup();
+                    }
+                } else {
+                    this._hide_mention_popup();
+                }
             }
         });
 
@@ -276,6 +709,16 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.$input.on("input", function () {
             this.style.height = "auto";
             this.style.height = Math.min(this.scrollHeight, 120) + "px";
+        });
+
+        // Auto-convert long pastes (>500 chars) to a file attachment
+        this.$input.on("paste", () => {
+            setTimeout(() => {
+                const text = this.$input.val();
+                if (text.length > 500) {
+                    this._convert_paste_to_file(text);
+                }
+            }, 50);
         });
 
         // Compact mode session selector
@@ -328,6 +771,206 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 this._hide_ctx_menu();
             }
         });
+
+        // Export button — toggles dropdown below the button
+        this.$panel.find(".ai-chat-export").on("click", (e) => {
+            e.stopPropagation();
+            if (this.$export_menu.is(":visible")) {
+                this.$export_menu.hide();
+                return;
+            }
+            const btn_rect = e.currentTarget.getBoundingClientRect();
+            const menu_w = 210;
+            const left = Math.min(btn_rect.left, window.innerWidth - menu_w - 8);
+            const top  = btn_rect.bottom + 4;
+            this.$export_menu.css({ left: left, top: top }).show();
+        });
+
+        // Export menu actions
+        this.$export_menu.find(".ai-export-html").on("click", () => {
+            this.$export_menu.hide();
+            this._export_html();
+        });
+
+        this.$export_menu.find(".ai-export-csv").on("click", () => {
+            this.$export_menu.hide();
+            this._export_csv();
+        });
+
+        // Close export menu on outside click
+        $(document).on("mousedown.ai_export", (e) => {
+            if (
+                !$(e.target).closest(".ai-export-menu").length &&
+                !$(e.target).closest(".ai-chat-export").length
+            ) {
+                this.$export_menu.hide();
+            }
+        });
+
+        // Help panel
+        this.$panel.find(".ai-chat-help").on("click", () => {
+            this._show_help();
+        });
+
+        // Sidebar search — instant client-side filtering
+        this.$panel.on("input", ".ai-sidebar-search", (e) => {
+            this._search_query = e.target.value.trim().toLowerCase();
+            this._render_sidebar_sessions();
+        });
+
+        // Company badge — toggle dropdown with fixed positioning
+        this.$company_badge.on("click", (e) => {
+            e.stopPropagation();
+            const is_visible = this.$company_dropdown.is(":visible");
+            if (!is_visible) {
+                const rect = this.$company_badge[0].getBoundingClientRect();
+                this.$company_dropdown.css({
+                    top: rect.bottom + 6,
+                    left: Math.max(rect.left, 10),
+                }).show();
+            } else {
+                this.$company_dropdown.hide();
+            }
+        });
+
+        // Close company dropdown on outside click
+        $(document).on("mousedown.ai_company", (e) => {
+            if (!$(e.target).closest(".ai-company-selector, .ai-company-dropdown").length) {
+                this.$company_dropdown.hide();
+            }
+        });
+
+        // Template cards — insert prompt and send
+        this.$messages.on("click", ".ai-template-card", (e) => {
+            const prompt = $(e.currentTarget).data("prompt");
+            this.$input.val(prompt);
+            this.send();
+        });
+
+        // ── Feature 16: File attachments ──────────────────────────────
+
+        // Attach button clicks the hidden file input
+        this.$panel.find(".ai-chat-attach").on("click", () => {
+            this.$panel.find(".ai-chat-file-input").trigger("click");
+        });
+
+        // Hidden file input change handler
+        this.$panel.find(".ai-chat-file-input").on("change", (e) => {
+            const files = e.target.files;
+            if (files && files.length) {
+                this._upload_files(Array.from(files));
+            }
+            e.target.value = ""; // Reset so same file can be re-selected
+        });
+
+        // Drag & drop on the messages area
+        this.$messages.on("dragover", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.$messages.addClass("ai-drag-over");
+        });
+
+        this.$messages.on("dragleave", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.$messages.removeClass("ai-drag-over");
+        });
+
+        this.$messages.on("drop", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.$messages.removeClass("ai-drag-over");
+            const files = e.originalEvent.dataTransfer.files;
+            if (files && files.length) {
+                this._upload_files(Array.from(files));
+            }
+        });
+
+        // ── Feature 17: Voice input ────────────────────────────────────
+
+        this.$panel.find(".ai-chat-voice").on("click", () => {
+            this._toggle_voice_input();
+        });
+
+        // ── Reply bar close ──────────────────────────────────────────
+        this.$reply_bar.find(".ai-reply-bar-close").on("click", () => {
+            this._cancel_reply();
+        });
+
+        // ── Message context menu actions ─────────────────────────────
+        this.$msg_ctx_menu.find(".ai-msg-ctx-reply").on("click", () => {
+            const target = this._msg_ctx_target;
+            this._hide_msg_ctx_menu();
+            if (target) this._start_reply(target.index, target.role, target.text);
+        });
+
+        this.$msg_ctx_menu.find(".ai-msg-ctx-forward").on("click", () => {
+            const target = this._msg_ctx_target;
+            this._hide_msg_ctx_menu();
+            if (target) this._show_forward_modal(target.index);
+        });
+
+        this.$msg_ctx_menu.find(".ai-msg-ctx-copy").on("click", () => {
+            const target = this._msg_ctx_target;
+            this._hide_msg_ctx_menu();
+            if (target && target.text) {
+                navigator.clipboard.writeText(target.text).then(() => {
+                    frappe.show_alert({ message: __("Copied to clipboard"), indicator: "green" });
+                });
+            }
+        });
+
+        // Close message context menu on outside click
+        $(document).on("mousedown.ai_msg_ctx", (e) => {
+            if (!$(e.target).closest(".ai-msg-ctx-menu").length) {
+                this._hide_msg_ctx_menu();
+            }
+        });
+
+        // Forward modal events
+        this.$forward_modal.find(".ai-forward-close").on("click", () => {
+            this.$forward_modal.hide();
+        });
+
+        this.$forward_modal.find(".ai-forward-search").on("input", (e) => {
+            this._filter_forward_users(e.target.value.trim().toLowerCase());
+        });
+
+        // ── DM mode toggle tabs ─────────────────────────────────────
+        this.$panel.on("click", ".ai-mode-tab", (e) => {
+            const mode = $(e.currentTarget).data("mode");
+            this.$panel.find(".ai-mode-tab").removeClass("active");
+            $(e.currentTarget).addClass("active");
+            if (mode === "dm") {
+                this._enter_dm_mode();
+            } else {
+                this._exit_dm_mode();
+            }
+        });
+
+        // DM new chat button
+        this.$panel.on("click", ".ai-dm-new-chat-btn", () => {
+            this._show_dm_user_picker();
+        });
+
+        // DM user search
+        this.$panel.on("input", ".ai-dm-user-search", (e) => {
+            this._filter_dm_conversations(e.target.value.trim().toLowerCase());
+        });
+
+        // Listen for incoming DMs via Socket.IO
+        frappe.realtime.on("ai_dm_new", (data) => {
+            this._on_dm_received(data);
+        });
+
+        // Listen for AI responses in DMs
+        frappe.realtime.on("ai_dm_ai_response", (data) => {
+            this._on_ai_dm_response(data);
+        });
+
+        // Load unread DM count and AI name on init
+        this._load_unread_dm_count();
+        this._load_ai_name();
     }
 
     // ── Panel open/close ─────────────────────────────────────────────
@@ -342,25 +985,148 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         }
     }
 
+    _scroll_top() {
+        this.$messages.scrollTop(0);
+    }
+
+    _show_help() {
+        const help_html = `
+        <div class="ai-help-panel">
+            <div class="ai-help-header">
+                <h3>AI Oracle — Available Commands</h3>
+                <button class="ai-help-close">&times;</button>
+            </div>
+            <div class="ai-help-content">
+                <div class="ai-help-section">
+                    <h4>Sales &amp; Customers</h4>
+                    <div class="ai-help-cmd">"Create a customer John Smith, email john@email.com, phone 71234567"</div>
+                    <div class="ai-help-cmd">"Look up customer NIRMAL"</div>
+                    <div class="ai-help-cmd">"Create a quotation for NIRMAL: 10 units of item 1-1"</div>
+                    <div class="ai-help-cmd">"Show me today's sales summary"</div>
+                    <div class="ai-help-cmd">"What are our top 10 customers?"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Purchasing &amp; Suppliers</h4>
+                    <div class="ai-help-cmd">"Create a supplier ACME Corp, email acme@corp.com"</div>
+                    <div class="ai-help-cmd">"Look up supplier TOOL WHOLESALE"</div>
+                    <div class="ai-help-cmd">"Create a PO for TOOL WHOLESALE: 100x item 1-1"</div>
+                    <div class="ai-help-cmd">"Show me overdue purchase invoices"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Accounting &amp; Finance</h4>
+                    <div class="ai-help-cmd">"Show me the trial balance"</div>
+                    <div class="ai-help-cmd">"Record payment of BWP 5000 from NIRMAL"</div>
+                    <div class="ai-help-cmd">"Show me the P&amp;L for this quarter"</div>
+                    <div class="ai-help-cmd">"What are our bank balances?"</div>
+                    <div class="ai-help-cmd">"Show general ledger for NIRMAL"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Stock &amp; Inventory</h4>
+                    <div class="ai-help-cmd">"Create item ABC-001, name Widget, rate 50"</div>
+                    <div class="ai-help-cmd">"What is the stock level for item 1-1?"</div>
+                    <div class="ai-help-cmd">"Which items need reordering?"</div>
+                    <div class="ai-help-cmd">"Transfer 5 units of item 1-1 between warehouses"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>HR &amp; People</h4>
+                    <div class="ai-help-cmd">"What is my leave balance?"</div>
+                    <div class="ai-help-cmd">"Apply for 2 days leave from April 1"</div>
+                    <div class="ai-help-cmd">"Show my salary slip"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>CRM</h4>
+                    <div class="ai-help-cmd">"Create a lead: John, john@email.com, from website"</div>
+                    <div class="ai-help-cmd">"List open opportunities"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Projects</h4>
+                    <div class="ai-help-cmd">"List active projects"</div>
+                    <div class="ai-help-cmd">"Create task: Review Q1 financials, high priority"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Support</h4>
+                    <div class="ai-help-cmd">"Create ticket: POS not printing, priority High"</div>
+                    <div class="ai-help-cmd">"List open support issues"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Assets</h4>
+                    <div class="ai-help-cmd">"List all company assets"</div>
+                    <div class="ai-help-cmd">"Show depreciation for asset ABC"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Saved Reports</h4>
+                    <div class="ai-help-cmd">"Save a report called daily-sales: show today's sales by branch"</div>
+                    <div class="ai-help-cmd">"Run the daily-sales report"</div>
+                    <div class="ai-help-cmd">"List my saved reports"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Scheduling</h4>
+                    <div class="ai-help-cmd">"Remind me to check overdue invoices in 15 minutes"</div>
+                    <div class="ai-help-cmd">"Send me a sales summary every Monday at 8am"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Files &amp; Media</h4>
+                    <div class="ai-help-cmd">[Upload CSV/Excel/PDF/Word] "Analyze this file"</div>
+                    <div class="ai-help-cmd">[Upload image] "What is in this picture?"</div>
+                    <div class="ai-help-cmd">"Email me the overdue invoices report"</div>
+                </div>
+                <div class="ai-help-section">
+                    <h4>Data &amp; Charts</h4>
+                    <div class="ai-help-cmd">"Show monthly sales as a line chart"</div>
+                    <div class="ai-help-cmd">"Revenue by customer group as a pie chart"</div>
+                    <div class="ai-help-cmd">[SQL] "Run: SELECT customer, SUM(grand_total)..."</div>
+                </div>
+            </div>
+        </div>`;
+
+        // Remove any existing help panel, then prepend the new one
+        this.$messages.find(".ai-help-panel").remove();
+        this.$messages.prepend(help_html);
+        this._scroll_top();
+
+        // Close button
+        this.$messages.find(".ai-help-close").on("click", () => {
+            this.$messages.find(".ai-help-panel").remove();
+        });
+
+        // Click a command to paste it into the input (strip surrounding quotes)
+        this.$messages.on("click.ai_help", ".ai-help-cmd", (e) => {
+            const raw = $(e.currentTarget).text().trim();
+            // Skip file-upload placeholders that start with [
+            if (raw.startsWith("[")) return;
+            // Strip surrounding quotation marks added for readability
+            const text = raw.replace(/^"/, "").replace(/"$/, "");
+            this.$input.val(text);
+            this.$input.focus();
+            this.$messages.find(".ai-help-panel").remove();
+            this.$messages.off("click.ai_help");
+        });
+    }
+
     toggle_expand() {
         this.is_expanded = !this.is_expanded;
         this.$panel.toggleClass("ai-chat-panel-expanded", this.is_expanded);
         this.$panel.find(".expand-icon").toggle(!this.is_expanded);
         this.$panel.find(".shrink-icon").toggle(this.is_expanded);
+        // Show/hide sidebar toggle button
+        this.$panel.find(".ai-chat-toggle-sidebar").toggle(this.is_expanded);
 
-        // In expanded mode: show sidebar, hide compact sessions bar.
-        // In compact mode: show sessions bar (if previously loaded), hide sidebar.
         if (this.is_expanded) {
             this.$sidebar.show();
             this.$panel.find(".ai-chat-sessions-bar").hide();
             this._load_sessions_list();
         } else {
             this.$sidebar.hide();
-            // Keep compact bar hidden until next manual expand – it was never
-            // shown in compact mode by default.
         }
 
         this._scroll_bottom();
+    }
+
+    _toggle_sidebar() {
+        if (!this.is_expanded) return;
+        const visible = this.$sidebar.is(":visible");
+        this.$sidebar.toggle(!visible);
+        this.$panel.toggleClass("ai-sidebar-hidden", visible);
     }
 
     // ── New session ──────────────────────────────────────────────────
@@ -369,23 +1135,51 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this.session_id = null;
         this.$messages.empty();
         this._cleanup_stream();
+        this._cancel_reply();
+        this._message_index = 0;
+        this._dm_mode = false;
+        this._dm_user = null;
         this.$input.focus();
         // Update compact selector
         this.$panel.find(".ai-chat-session-select").val("");
         // Highlight no item in sidebar
         this.$session_list.find(".ai-session-item").removeClass("active");
+        // Show quick-action templates for the fresh empty state
+        this._show_templates();
     }
 
     // ── Message rendering ────────────────────────────────────────────
 
-    add_message(role, content) {
+    add_message(role, content, opts) {
+        opts = opts || {};
         const cls = role === "user" ? "ai-msg-user" : "ai-msg-bot";
-        const $msg = $(`<div class="ai-msg ${cls}"></div>`);
-        if (role === "user") {
-            $msg.text(content);
-        } else {
-            $msg.html(erpnext_ai_bots.render_markdown(content));
+        const idx = opts.index != null ? opts.index : this._message_index++;
+        const $msg = $(`<div class="ai-msg ${cls}" data-msg-idx="${idx}"></div>`);
+
+        // Reply quote bubble
+        if (opts.reply_to_text) {
+            const reply_label = opts.reply_to_role === "user" ? "You" : "AI Assistant";
+            const $quote = $(`<div class="ai-reply-quote">
+                <span class="ai-reply-quote-label">${frappe.utils.escape_html(reply_label)}</span>
+                <span class="ai-reply-quote-text">${frappe.utils.escape_html(opts.reply_to_text.substring(0, 120))}</span>
+            </div>`);
+            $msg.append($quote);
         }
+
+        if (role === "user") {
+            $msg.append($('<span class="ai-msg-text"></span>').text(content));
+        } else {
+            $msg.append($(erpnext_ai_bots.render_markdown(content)));
+        }
+
+        // Right-click context menu for reply/forward (only on AI chat, not DM)
+        if (!this._dm_mode) {
+            $msg.on("contextmenu", (e) => {
+                e.preventDefault();
+                this._show_msg_ctx_menu(e.pageX, e.pageY, idx, role, content);
+            });
+        }
+
         this.$messages.append($msg);
         this._scroll_bottom();
         return $msg;
@@ -415,38 +1209,29 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     async _load_session(session_id) {
-        // If currently streaming a DIFFERENT session, let it finish in background
-        if (this.is_streaming && this.session_id && this.session_id !== session_id) {
-            // Keep the stream handler alive — it will update the DB when done
-            // Just detach it from the current UI
-            const old_sid = this.session_id;
-            const old_handler = this.stream_handler;
-            this.stream_handler = null;
-            this.is_streaming = false;
-            this.$panel.find(".ai-chat-send").prop("disabled", false);
-            if (this.$thinking) { this.$thinking.remove(); this.$thinking = null; }
+        // Prevent concurrent load calls (race between init and user click)
+        if (this._loading_session) return;
+        this._loading_session = true;
 
-            // When the old session finishes, show a notification and refresh sidebar
-            if (old_handler) {
-                // Replace callbacks to just notify
-                frappe.realtime.on("ai_done", (data) => {
-                    if (data.session_id === old_sid) {
-                        frappe.show_alert({ message: __("AI finished processing in background"), indicator: "blue" });
-                        if (this.is_expanded) this._load_sessions_list();
-                        // Clean up this one-time listener
-                        frappe.realtime.off("ai_done", arguments.callee);
-                        old_handler.destroy();
-                    }
-                });
-            }
-        } else {
-            // Same session or not streaming — normal reset
+        // If switching away from a streaming session, let the backend finish.
+        // We just reset the UI state — the backend job saves to DB independently.
+        if (this.is_streaming) {
+            // Keep the old session ID to auto-refresh later
+            const was_streaming_sid = this.session_id;
             this.is_streaming = false;
-            this.$panel.find(".ai-chat-send").prop("disabled", false);
             this._cleanup_stream();
+            this._remove_status_indicators();
+            if (this._stream_timeout) {
+                clearTimeout(this._stream_timeout);
+                this._stream_timeout = null;
+            }
+            // Auto-refresh the old session after a delay (backend may still be processing)
+            setTimeout(() => {
+                if (this.is_expanded) this._load_sessions_list();
+            }, 10000);
         }
 
-        if (this.$thinking) { this.$thinking.remove(); this.$thinking = null; }
+        this._remove_status_indicators();
 
         try {
             const r = await frappe.call({
@@ -457,9 +1242,20 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             const data = r.message || {};
             this.session_id = session_id;
             this.$messages.empty();
+            this._message_index = 0;
+            this._dm_mode = false;
+            this._dm_user = null;
 
             const messages = data.messages || [];
-            for (const msg of messages) {
+            const visible_messages = messages.filter(
+                m => m.role !== "system" && (
+                    typeof m.content === "string"
+                        ? m.content
+                        : (Array.isArray(m.content) && m.content.some(b => b.type === "text" && b.text))
+                )
+            );
+
+            for (const msg of visible_messages) {
                 let content = msg.content;
                 if (Array.isArray(content)) {
                     const texts = content
@@ -467,9 +1263,16 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                         .map(b => b.text);
                     content = texts.join("\n");
                 }
-                if (content && msg.role !== "system") {
+                if (content) {
                     this.add_message(msg.role, content);
                 }
+            }
+
+            // Show templates only when the session has no visible messages
+            if (visible_messages.length === 0) {
+                this._show_templates();
+            } else {
+                this.$messages.find(".ai-templates-grid").hide();
             }
 
             // Highlight active item in sidebar
@@ -483,6 +1286,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             setTimeout(() => this._scroll_bottom(), 100);
         } catch (e) {
             // Silently fail
+        } finally {
+            this._loading_session = false;
         }
     }
 
@@ -512,11 +1317,18 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
     }
 
     _render_sidebar_sessions() {
-        const filtered = this._active_category === "All"
+        let filtered = this._active_category === "All"
             ? this._all_sessions
             : this._all_sessions.filter(s =>
                 (s.category || "General") === this._active_category
               );
+
+        // Apply search query filter (instant, client-side)
+        if (this._search_query) {
+            filtered = filtered.filter(s =>
+                (s.title || "").toLowerCase().includes(this._search_query)
+            );
+        }
 
         // Pinned sessions float to the top, order within each group preserved
         const sorted = [
@@ -682,28 +1494,59 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     async send(retry_message) {
         const message = retry_message || this.$input.val().trim();
-        if (!message || this.is_streaming) return;
+        if (!message) return;
+
+        // Route to DM send if in DM mode
+        if (this._dm_mode && this._dm_user) {
+            this._send_dm(message);
+            return;
+        }
+
+        // Build the actual message sent to the AI, prepending file context if available
+        let actual_message = message;
+        if (!retry_message && this._pending_attachment) {
+            actual_message = `[File attached: ${this._pending_attachment.file_name} (${this._pending_attachment.file_type}), URL: ${this._pending_attachment.file_url}]\n\n${message}`;
+            this._pending_attachment = null;
+        }
 
         if (!retry_message) {
             this.$input.val("").trigger("input");
-            this.add_message("user", message);
+            // Include reply context if replying
+            const reply_opts = this._reply_to ? {
+                reply_to_text: this._reply_to.text,
+                reply_to_role: this._reply_to.role,
+            } : {};
+            this.add_message("user", message, reply_opts);
+            this._cancel_reply();
+            // Hide templates on first real send
+            this.$messages.find(".ai-templates-grid").hide();
         }
         this.is_streaming = true;
-        this.$panel.find(".ai-chat-send").prop("disabled", true);
+        this._last_message = actual_message;
+        // Don't disable send — let user queue messages
 
-        // Create a lightweight thinking indicator (not inside a message card)
+        // Remove any leftover status indicators and show THINKING state
+        this._remove_status_indicators();
         this.current_message_text = "";
-        this._thinking_steps = [];
-        this.$thinking = $('<div class="ai-thinking-inline"><span class="ai-thinking-dot"></span> Thinking...</div>');
-        this.$messages.append(this.$thinking);
-        this._scroll_bottom();
+        this._show_thinking();
         // The real bot message bubble will be created when first text chunk arrives
         this.$current_message = null;
 
         try {
+            const args = {
+                message: actual_message,
+                session_id: this.session_id,
+                company: this._current_company || null,
+            };
+            if (this._pending_image_url) {
+                // Convert relative URL to absolute so the Codex API can fetch it
+                args.image_url = window.location.origin + this._pending_image_url;
+                this._pending_image_url = null;
+            }
+
             const result = await frappe.call({
                 method: "erpnext_ai_bots.api.chat.send_message",
-                args: { message: message, session_id: this.session_id },
+                args,
                 async: true,
             });
 
@@ -729,15 +1572,14 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 if (this.is_streaming) {
                     this._finish_streaming();
                     if (!this.current_message_text) {
-                        const $err = this.add_message("assistant", "No response received. The server may be busy — please try again.");
-                        $err.addClass("ai-msg-error");
+                        this._show_error("No response received — the server may be busy");
                     }
                 }
             }, 120000);
         } catch (err) {
+            console.error("AI Chat send_message error:", err);
             this._finish_streaming();
-            const $err = this.add_message("assistant", "Something went wrong. Please try again.");
-            $err.addClass("ai-msg-error");
+            this._show_error("Something went wrong — please try again");
         }
     }
 
@@ -854,11 +1696,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 onChunk: (text) => {
                     // Create bot bubble on first chunk if it doesn't exist yet
                     if (!this.$current_message) {
-                        // Remove inline thinking indicator
-                        if (this.$thinking) {
-                            this.$thinking.remove();
-                            this.$thinking = null;
-                        }
+                        // Remove thinking indicator — response has started
+                        this._remove_status_indicators();
                         this.$current_message = this.add_message("assistant", "");
                     }
                     this.current_message_text += text;
@@ -868,24 +1707,19 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     this._scroll_bottom();
                 },
                 onToolStart: (tool) => {
-                    // Update the inline thinking indicator with tool steps
-                    if (!this._thinking_steps.includes(tool)) {
-                        this._thinking_steps.push(tool);
-                    }
-                    if (this.$thinking) {
-                        this.$thinking.html(
-                            this._thinking_steps.map(s =>
-                                `<span class="ai-thinking-dot"></span> ${s}...`
-                            ).join("<br>")
-                        );
-                        this._scroll_bottom();
-                    }
+                    // Update status text to show which tool is running
+                    this._update_status_text(tool);
                 },
                 onToolResult: () => {
-                    // no-op — inline thinking handles display
+                    // no-op
                 },
                 onDone: () => {
                     this._finish_streaming();
+                    // Add delivered tick and optional TTS button to the bot message
+                    if (this.$current_message) {
+                        this._add_delivered_tick(this.$current_message);
+                        this._add_tts_button(this.$current_message);
+                    }
                     // Refresh sidebar after response so message counts update
                     if (this.is_expanded) {
                         this._load_sessions_list();
@@ -893,8 +1727,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                 },
                 onError: (error) => {
                     this._finish_streaming();
-                    const $err = this.add_message("assistant", `**Error:** ${error}`);
-                    $err.addClass("ai-msg-error");
+                    this._show_error(error || "Something went wrong — please try again");
                 },
             }
         );
@@ -902,23 +1735,17 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
 
     _finish_streaming() {
         this.is_streaming = false;
-        // Remove inline thinking indicator
-        if (this.$thinking) {
-            this.$thinking.remove();
-            this.$thinking = null;
-        }
-        // Cancel any pending tool-hide delay and hide immediately
+        // Remove any status indicators still showing
+        this._remove_status_indicators();
+        // Cancel any pending tool-hide delay and hide tool indicator bar
         clearTimeout(this._tool_hide_timeout);
         this._tool_hide_timeout = null;
         this.$tool_indicator.hide();
-        this.$panel.find(".ai-chat-send").prop("disabled", false);
         if (this._stream_timeout) {
             clearTimeout(this._stream_timeout);
             this._stream_timeout = null;
         }
         if (this.$current_message) {
-            // Stop thinking dots animation
-            this.$current_message.find(".ai-thinking-block").addClass("ai-thinking-done");
             // Apply data-result class if the message contains a table
             if (this.$current_message.find("table").length) {
                 this.$current_message.addClass("ai-msg-data");
@@ -927,10 +1754,1030 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         this._cleanup_stream();
     }
 
+    // ── Status indicators ─────────────────────────────────────────────
+
+    /** Show the animated 3-dot THINKING indicator below the user's message. */
+    _show_thinking() {
+        this.$status_indicator = $(`
+            <div class="ai-status-indicator ai-status-thinking">
+                <div class="ai-bounce-loader">
+                    <span></span><span></span><span></span>
+                </div>
+                <span class="ai-status-text">Processing...</span>
+            </div>
+        `);
+        this.$messages.append(this.$status_indicator);
+        this._scroll_bottom();
+    }
+
+    /** Update the status text while a tool is running. */
+    _update_status_text(tool_name) {
+        if (this.$status_indicator && this.$status_indicator.hasClass("ai-status-thinking")) {
+            this.$status_indicator.find(".ai-status-text").text(tool_name + "...");
+            this._scroll_bottom();
+        }
+    }
+
+    /** Remove all status indicators (thinking + error) from the message list. */
+    _remove_status_indicators() {
+        this.$messages.find(".ai-status-indicator").remove();
+        this.$status_indicator = null;
+    }
+
+    /**
+     * Show the ERROR indicator with a Retry button.
+     * @param {string} msg - User-friendly error message (no technical jargon).
+     */
+    _show_error(msg) {
+        // Remove any thinking indicator first
+        this._remove_status_indicators();
+
+        this.$status_indicator = $(`
+            <div class="ai-status-indicator ai-status-error">
+                <span class="ai-error-icon">!</span>
+                <span class="ai-status-text">${frappe.utils.escape_html(msg)}</span>
+                <button class="ai-retry-btn">Retry</button>
+            </div>
+        `);
+
+        this.$status_indicator.find(".ai-retry-btn").on("click", () => {
+            this._remove_status_indicators();
+            if (this._last_message) {
+                this.send(this._last_message);
+            }
+        });
+
+        this.$messages.append(this.$status_indicator);
+        this._scroll_bottom();
+    }
+
+    /** Show or re-show the quick-action templates grid in the messages area. */
+    _show_templates() {
+        // If the grid already exists in the DOM just make it visible
+        const $existing = this.$messages.find(".ai-templates-grid");
+        if ($existing.length) {
+            $existing.show();
+            return;
+        }
+        // Otherwise inject a fresh grid (e.g. after $messages.empty())
+        const $grid = $(`
+            <div class="ai-templates-grid">
+                <div class="ai-template-card" data-prompt="Show me today's sales summary">
+                    <span class="ai-template-icon">📊</span>
+                    <span class="ai-template-text">Today's Sales</span>
+                </div>
+                <div class="ai-template-card" data-prompt="List all overdue invoices">
+                    <span class="ai-template-icon">⚠️</span>
+                    <span class="ai-template-text">Overdue Invoices</span>
+                </div>
+                <div class="ai-template-card" data-prompt="What is our current stock level for low-stock items?">
+                    <span class="ai-template-icon">📦</span>
+                    <span class="ai-template-text">Low Stock Alert</span>
+                </div>
+                <div class="ai-template-card" data-prompt="Show me the top 10 customers by revenue this month">
+                    <span class="ai-template-icon">👥</span>
+                    <span class="ai-template-text">Top Customers</span>
+                </div>
+                <div class="ai-template-card" data-prompt="What is our bank balance across all accounts?">
+                    <span class="ai-template-icon">🏦</span>
+                    <span class="ai-template-text">Bank Balances</span>
+                </div>
+                <div class="ai-template-card" data-prompt="Create a quotation">
+                    <span class="ai-template-icon">📝</span>
+                    <span class="ai-template-text">New Quotation</span>
+                </div>
+            </div>
+        `);
+        this.$messages.prepend($grid);
+    }
+
+    /**
+     * Append a green delivered tick to the given bot message element.
+     * @param {jQuery} $msg
+     */
+    _add_delivered_tick($msg) {
+        $msg.append('<span class="ai-delivered-tick" title="Delivered">&#10003;</span>');
+    }
+
+    // ── Feature 17: TTS button ────────────────────────────────────────
+
+    /**
+     * Append a speaker button to a bot message bubble.
+     * Only shown when an ElevenLabs API key is configured.
+     * @param {jQuery} $msg
+     */
+    _add_tts_button($msg) {
+        if (!this._elevenlabs_key) return;
+        const $btn = $('<button class="ai-tts-btn" title="Listen">&#128266;</button>');
+        $msg.append($btn);
+        $btn.on("click", async (e) => {
+            e.stopPropagation();
+            // Extract plain text — strip HTML tags
+            const text = $msg.clone().find(".ai-delivered-tick, .ai-tts-btn").remove().end().text().trim();
+            if (!text) return;
+            $btn.text("⏳");
+            try {
+                const resp = await fetch(
+                    "https://api.elevenlabs.io/v1/text-to-speech/" + this._elevenlabs_voice_id,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "xi-api-key": this._elevenlabs_key,
+                        },
+                        body: JSON.stringify({
+                            text: text.substring(0, 5000),
+                            model_id: "eleven_multilingual_v2",
+                        }),
+                    }
+                );
+                if (!resp.ok) {
+                    throw new Error("TTS API error: " + resp.status);
+                }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.play();
+                $btn.html("&#128266;");
+                audio.onended = () => URL.revokeObjectURL(url);
+            } catch (err) {
+                $btn.html("&#128266;");
+                frappe.show_alert({ message: __("Text-to-speech failed"), indicator: "red" });
+            }
+        });
+    }
+
+    /**
+     * Load ElevenLabs TTS configuration from AI Bot Settings.
+     * Silently does nothing if the key is not set.
+     */
+    async _load_elevenlabs_config() {
+        try {
+            const r = await frappe.call({
+                method: "frappe.client.get_value",
+                args: {
+                    doctype: "AI Bot Settings",
+                    fieldname: ["elevenlabs_api_key", "elevenlabs_voice_id"],
+                },
+                async: true,
+            });
+            if (r.message) {
+                this._elevenlabs_key = r.message.elevenlabs_api_key || "";
+                this._elevenlabs_voice_id = r.message.elevenlabs_voice_id || "21m00Tcm4TlvDq8ikWAM";
+            }
+        } catch (e) {
+            // Silently fall back — TTS is optional
+        }
+    }
+
+    // ── Feature 16: File upload ───────────────────────────────────────
+
+    /**
+     * Upload an array of File objects one by one, showing a preview bubble
+     * for each. The last successfully uploaded file is stored as
+     * this._pending_attachment so it gets prepended to the next sent message.
+     * @param {File[]} files
+     */
+    async _upload_files(files) {
+        for (const file of files) {
+            const $preview = this._create_file_preview(file);
+            this.$messages.append($preview);
+            this._scroll_bottom();
+
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("session_id", this.session_id || "");
+
+                const response = await fetch(
+                    "/api/method/erpnext_ai_bots.api.chat.upload_file",
+                    {
+                        method: "POST",
+                        body: formData,
+                        headers: {
+                            "X-Frappe-CSRF-Token": frappe.csrf_token,
+                        },
+                    }
+                );
+                const data = await response.json();
+
+                if (data.message) {
+                    this._pending_attachment = data.message;
+                    $preview.find(".ai-file-status").text("Attached").addClass("ai-file-success");
+
+                    // Store image URL for vision and show an inline thumbnail
+                    if (data.message.file_type && data.message.file_type.startsWith("image/")) {
+                        this._pending_image_url = data.message.file_url;
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const $img = $(`<div class="ai-msg ai-msg-user ai-img-preview">
+                                <img src="${e.target.result}" alt="${frappe.utils.escape_html(file.name)}" />
+                            </div>`);
+                            this.$messages.append($img);
+                            this._scroll_bottom();
+                        };
+                        reader.readAsDataURL(file);
+                    }
+
+                    // Pre-fill the input so the user knows a file is queued
+                    const current = this.$input.val();
+                    if (!current.startsWith("[Attached:")) {
+                        this.$input.val(`[Attached: ${data.message.file_name}] `);
+                    }
+                    this.$input.focus();
+                } else {
+                    $preview.find(".ai-file-status").text("Failed").addClass("ai-file-error");
+                }
+            } catch (err) {
+                $preview.find(".ai-file-status").text("Failed").addClass("ai-file-error");
+            }
+        }
+    }
+
+    /**
+     * Build a file-preview bubble shown inline while uploading.
+     * @param {File} file
+     * @returns {jQuery}
+     */
+    _create_file_preview(file) {
+        let icon;
+        if (file.type.startsWith("image/")) {
+            icon = "&#128444;"; // 🖼
+        } else if (file.type.includes("pdf")) {
+            icon = "&#128196;"; // 📄
+        } else if (file.type.includes("csv") || file.type.includes("excel") || file.type.includes("spreadsheet")) {
+            icon = "&#128202;"; // 📊
+        } else {
+            icon = "&#128206;"; // 📎
+        }
+        const size = (file.size / 1024).toFixed(1) + " KB";
+        return $(`
+            <div class="ai-msg ai-msg-user ai-file-preview">
+                <span class="ai-file-icon">${icon}</span>
+                <div class="ai-file-info">
+                    <span class="ai-file-name">${frappe.utils.escape_html(file.name)}</span>
+                    <span class="ai-file-size">${size}</span>
+                </div>
+                <span class="ai-file-status">Uploading...</span>
+            </div>
+        `);
+    }
+
+    // ── Long-paste to file conversion ────────────────────────────────
+
+    /**
+     * Convert a long pasted text block into a .txt file attachment,
+     * mirroring the UX of Claude and ChatGPT.
+     * @param {string} text  The full pasted text (already in the textarea)
+     */
+    _convert_paste_to_file(text) {
+        const blob = new Blob([text], { type: "text/plain" });
+        const file = new File([blob], "pasted_content.txt", { type: "text/plain" });
+
+        // Clear the textarea immediately
+        this.$input.val("").trigger("input");
+
+        // Upload as a regular file attachment
+        this._upload_files([file]);
+
+        // After the upload starts, pre-fill a prompt referencing the content
+        setTimeout(() => {
+            const preview = text.substring(0, 100).replace(/\n/g, " ");
+            this.$input.val(`Analyze the pasted content: "${preview}..."`);
+            this.$input.focus();
+        }, 500);
+
+        frappe.show_alert({
+            message: __("Long text converted to file attachment"),
+            indicator: "blue",
+        });
+    }
+
+    // ── Feature 17: Voice input ───────────────────────────────────────
+
+    /**
+     * Toggle the Web Speech API microphone recording. Starts recording on the
+     * first call and stops on the second. Automatically sends the transcript
+     * when recording ends if the input has text.
+     */
+    _toggle_voice_input() {
+        if (this._is_recording) {
+            this._stop_voice();
+            return;
+        }
+
+        if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+            frappe.show_alert({
+                message: __("Voice input not supported in this browser. Use Chrome or Edge."),
+                indicator: "orange",
+            });
+            return;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this._recognition = new SpeechRecognition();
+        this._recognition.continuous = false;
+        this._recognition.interimResults = true;
+        this._recognition.lang = "en-US";
+
+        this._recognition.onstart = () => {
+            this._is_recording = true;
+            this.$panel.find(".ai-chat-voice").addClass("ai-voice-active");
+            this.$input.attr("placeholder", "Listening...");
+        };
+
+        this._recognition.onresult = (event) => {
+            let transcript = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                transcript += event.results[i][0].transcript;
+            }
+            this.$input.val(transcript).trigger("input");
+        };
+
+        this._recognition.onend = () => {
+            this._is_recording = false;
+            this.$panel.find(".ai-chat-voice").removeClass("ai-voice-active");
+            this.$input.attr("placeholder", "Ask about your ERPNext data...");
+            // Auto-send if the input has text
+            const text = this.$input.val().trim();
+            if (text) {
+                this.send();
+            }
+        };
+
+        this._recognition.onerror = (event) => {
+            this._is_recording = false;
+            this.$panel.find(".ai-chat-voice").removeClass("ai-voice-active");
+            this.$input.attr("placeholder", "Ask about your ERPNext data...");
+            if (event.error !== "no-speech") {
+                frappe.show_alert({
+                    message: __("Voice error: " + event.error),
+                    indicator: "red",
+                });
+            }
+        };
+
+        this._recognition.start();
+    }
+
+    /** Stop an in-progress voice recording. */
+    _stop_voice() {
+        if (this._recognition) {
+            this._recognition.stop();
+        }
+        this._is_recording = false;
+        this.$panel.find(".ai-chat-voice").removeClass("ai-voice-active");
+        this.$input.attr("placeholder", "Ask about your ERPNext data...");
+    }
+
     _cleanup_stream() {
         if (this.stream_handler) {
             this.stream_handler.destroy();
             this.stream_handler = null;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // REPLY FEATURE
+    // ═══════════════════════════════════════════════════════════════════
+
+    _show_msg_ctx_menu(x, y, index, role, text) {
+        this._msg_ctx_target = { index, role, text };
+        const menu_w = 140;
+        const menu_h = 100;
+        const left = Math.min(x, window.innerWidth - menu_w - 8);
+        const top  = Math.min(y, window.innerHeight - menu_h - 8);
+        this.$msg_ctx_menu.css({ left, top }).show();
+    }
+
+    _hide_msg_ctx_menu() {
+        this.$msg_ctx_menu.hide();
+        this._msg_ctx_target = null;
+    }
+
+    _start_reply(index, role, text) {
+        this._reply_to = { index, role, text };
+        const label = role === "user" ? "You" : "AI Assistant";
+        this.$reply_bar.find(".ai-reply-bar-label").text("Replying to " + label);
+        this.$reply_bar.find(".ai-reply-bar-text").text(text.substring(0, 80) + (text.length > 80 ? "..." : ""));
+        this.$reply_bar.show();
+        this.$input.focus();
+    }
+
+    _cancel_reply() {
+        this._reply_to = null;
+        this.$reply_bar.hide();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FORWARD FEATURE
+    // ═══════════════════════════════════════════════════════════════════
+
+    async _show_forward_modal(message_index) {
+        this._forward_target_index = message_index;
+        this._user_picker_mode = "forward";  // "forward" or "dm"
+        this.$forward_modal.show();
+        this.$forward_modal.find(".ai-forward-header span").text("Forward to...");
+        this.$forward_modal.find(".ai-forward-note-wrap").show();
+        this.$forward_modal.find(".ai-forward-search").val("").focus();
+        this.$forward_modal.find(".ai-forward-note").val("");
+        this._load_user_picker_list();
+    }
+
+    async _load_user_picker_list() {
+        this.$forward_modal.find(".ai-forward-user-list").html(
+            '<div class="ai-forward-loading">Loading users...</div>'
+        );
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_company_users",
+                args: { company: this._current_company || "" },
+                async: true,
+            });
+            this._forward_users = r.message || [];
+            this._render_user_picker(this._forward_users);
+        } catch (e) {
+            this.$forward_modal.find(".ai-forward-user-list").html(
+                '<div class="ai-forward-loading">Could not load users</div>'
+            );
+        }
+    }
+
+    _render_user_picker(users) {
+        const $list = this.$forward_modal.find(".ai-forward-user-list");
+        $list.empty();
+        if (!users.length) {
+            $list.html('<div class="ai-forward-loading">No users found</div>');
+            return;
+        }
+        const mode = this._user_picker_mode;
+        for (const u of users) {
+            const avatar = u.user_image
+                ? `<img src="${u.user_image}" class="ai-forward-avatar" />`
+                : `<span class="ai-forward-avatar-placeholder">${(u.full_name || u.name).charAt(0).toUpperCase()}</span>`;
+            const online_dot = u.is_online
+                ? '<span class="ai-online-dot" title="Online"></span>'
+                : '<span class="ai-offline-dot" title="Offline"></span>';
+            const $item = $(`
+                <div class="ai-forward-user-item" data-user="${frappe.utils.escape_html(u.name)}">
+                    <div class="ai-user-avatar-wrap">
+                        ${avatar}
+                        ${online_dot}
+                    </div>
+                    <div class="ai-forward-user-info">
+                        <span class="ai-forward-user-name">${frappe.utils.escape_html(u.full_name || u.name)}</span>
+                        <span class="ai-forward-user-email">${frappe.utils.escape_html(u.name)}</span>
+                    </div>
+                </div>
+            `);
+            if (mode === "forward") {
+                $item.on("click", () => this._do_forward(u.name, u.full_name || u.name));
+            } else {
+                $item.on("click", () => {
+                    this.$forward_modal.hide();
+                    this._open_dm_conversation(u.name, u.full_name || u.name);
+                });
+            }
+            $list.append($item);
+        }
+    }
+
+    _filter_forward_users(query) {
+        if (!this._forward_users) return;
+        const filtered = query
+            ? this._forward_users.filter(u =>
+                (u.full_name || "").toLowerCase().includes(query) ||
+                u.name.toLowerCase().includes(query)
+            )
+            : this._forward_users;
+        this._render_user_picker(filtered);
+    }
+
+    async _do_forward(to_user, to_name) {
+        const note = this.$forward_modal.find(".ai-forward-note").val().trim();
+        this.$forward_modal.hide();
+
+        if (this._forward_target_index == null) {
+            frappe.show_alert({ message: __("No message selected to forward"), indicator: "orange" });
+            return;
+        }
+
+        try {
+            await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.forward_message",
+                args: {
+                    session_id: this.session_id,
+                    message_index: this._forward_target_index,
+                    to_user: to_user,
+                    note: note,
+                },
+                async: true,
+            });
+            frappe.show_alert({
+                message: __("Message forwarded to {0}", [to_name]),
+                indicator: "green",
+            });
+        } catch (e) {
+            frappe.show_alert({
+                message: __("Could not forward message"),
+                indicator: "red",
+            });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DIRECT MESSAGE (DM) FEATURE
+    // ═══════════════════════════════════════════════════════════════════
+
+    _show_mention_popup() {
+        const ai_name = this._ai_name || "AI Oracle";
+        const $popup = this.$mention_popup;
+        $popup.empty();
+
+        const $item = $(`
+            <div class="ai-mention-item">
+                <span class="ai-mention-avatar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2">
+                        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+                        <path d="M12 8v4l3 3"/>
+                    </svg>
+                </span>
+                <div class="ai-mention-info">
+                    <span class="ai-mention-name">${frappe.utils.escape_html(ai_name)}</span>
+                    <span class="ai-mention-hint">Ask ${frappe.utils.escape_html(ai_name)} a question</span>
+                </div>
+            </div>
+        `);
+
+        $item.on("click", () => {
+            // Replace the @partial with @<ai_name>
+            const val = this.$input.val();
+            const newVal = val.replace(/(^|\s)@\w*$/, "$1@" + ai_name + " ");
+            this.$input.val(newVal).focus();
+            this._hide_mention_popup();
+        });
+
+        $popup.append($item);
+
+        // Position above the input
+        const input_rect = this.$input[0].getBoundingClientRect();
+        $popup.css({
+            left: input_rect.left,
+            bottom: window.innerHeight - input_rect.top + 4,
+            width: Math.min(input_rect.width, 250),
+        }).show();
+
+        // Close on outside click
+        setTimeout(() => {
+            $(document).one("mousedown.ai_mention", (e) => {
+                if (!$(e.target).closest(".ai-mention-popup").length) {
+                    this._hide_mention_popup();
+                }
+            });
+        }, 50);
+    }
+
+    _hide_mention_popup() {
+        this.$mention_popup.hide();
+        $(document).off("mousedown.ai_mention");
+    }
+
+    async _load_ai_name() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_ai_name",
+                async: true,
+            });
+            this._ai_name = (r.message && r.message.ai_name) || "AI Oracle";
+        } catch (e) {
+            this._ai_name = "AI Oracle";
+        }
+    }
+
+    _on_ai_dm_response(data) {
+        // If we're viewing this DM conversation, show the AI response
+        const other = data.from_user === frappe.session.user ? data.to_user : data.from_user;
+        if (this._dm_mode && this._dm_user === other) {
+            this._remove_status_indicators();
+            this._append_dm_bubble("received", `**${data.ai_name}:**\n${data.message}`, data.ai_name);
+        }
+        // Refresh DM list
+        if (this._dm_mode && this.is_expanded) {
+            this._load_dm_conversations();
+        }
+    }
+
+    async _load_unread_dm_count() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_unread_dm_count",
+                async: true,
+            });
+            this._dm_unread_count = (r.message && r.message.count) || 0;
+            this._update_dm_badge();
+        } catch (e) {
+            // Silently fail
+        }
+    }
+
+    _update_dm_badge() {
+        const $badge = this.$panel.find(".ai-dm-badge");
+        if (this._dm_unread_count > 0) {
+            $badge.text(this._dm_unread_count).show();
+        } else {
+            $badge.hide();
+        }
+    }
+
+    _on_dm_received(data) {
+        this._dm_unread_count++;
+        this._update_dm_badge();
+
+        // If we're viewing DMs with this sender, append the message live
+        if (this._dm_mode && this._dm_user === data.from_user) {
+            this._append_dm_bubble("received", data.message, data.from_name);
+            // Auto-mark as read
+            frappe.call({
+                method: "erpnext_ai_bots.api.messaging.mark_dm_read",
+                args: { other_user: data.from_user },
+                async: true,
+            });
+        } else {
+            // Show a toast notification
+            frappe.show_alert({
+                message: `<strong>${frappe.utils.escape_html(data.from_name)}</strong>: ${frappe.utils.escape_html(data.message.substring(0, 60))}`,
+                indicator: "blue",
+            });
+        }
+
+        // Refresh DM conversation list if sidebar is showing DMs
+        if (this._dm_mode && this.is_expanded) {
+            this._load_dm_conversations();
+        }
+    }
+
+    _enter_dm_mode() {
+        this._dm_mode = true;
+        this.$ai_section.hide();
+        this.$dm_section.show();
+        this._load_dm_conversations();
+        // Update header title
+        this.$panel.find(".ai-chat-title").text("Direct Messages");
+    }
+
+    _exit_dm_mode() {
+        this._dm_mode = false;
+        this._dm_user = null;
+        this.$dm_section.hide();
+        this.$ai_section.show();
+        this.$panel.find(".ai-chat-title").text("AI Assistant");
+        // If we were viewing a DM conversation, reload the AI session
+        if (this.session_id) {
+            this._load_session(this.session_id);
+        } else {
+            this.$messages.empty();
+            this._show_templates();
+        }
+    }
+
+    async _load_dm_conversations() {
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_dm_conversations",
+                args: { company: this._current_company || "" },
+                async: true,
+            });
+            this._dm_conversations = r.message || [];
+            this._render_dm_conversations(this._dm_conversations);
+        } catch (e) {
+            this.$dm_conv_list.html('<div class="ai-sidebar-empty">Could not load conversations</div>');
+        }
+    }
+
+    _render_dm_conversations(conversations) {
+        this.$dm_conv_list.empty();
+        if (!conversations.length) {
+            this.$dm_conv_list.html('<div class="ai-sidebar-empty">No conversations yet</div>');
+            return;
+        }
+        for (const conv of conversations) {
+            const avatar = conv.user_image
+                ? `<img src="${conv.user_image}" class="ai-dm-avatar" />`
+                : `<span class="ai-dm-avatar-placeholder">${(conv.full_name || conv.user).charAt(0).toUpperCase()}</span>`;
+            const online_dot = conv.is_online
+                ? '<span class="ai-online-dot" title="Online"></span>'
+                : '<span class="ai-offline-dot" title="Offline"></span>';
+            const unread = conv.unread_count > 0
+                ? `<span class="ai-dm-unread">${conv.unread_count}</span>`
+                : "";
+            const preview = conv.is_from_me ? `You: ${conv.last_message}` : conv.last_message;
+            const is_active = conv.user === this._dm_user ? " active" : "";
+
+            const $item = $(`
+                <div class="ai-dm-conv-item${is_active}" data-user="${frappe.utils.escape_html(conv.user)}">
+                    <div class="ai-user-avatar-wrap">
+                        ${avatar}
+                        ${online_dot}
+                    </div>
+                    <div class="ai-dm-conv-info">
+                        <div class="ai-dm-conv-top">
+                            <span class="ai-dm-conv-name">${frappe.utils.escape_html(conv.full_name || conv.user)}</span>
+                            ${unread}
+                        </div>
+                        <span class="ai-dm-conv-preview">${frappe.utils.escape_html(preview.substring(0, 40))}</span>
+                    </div>
+                </div>
+            `);
+            $item.on("click", () => this._open_dm_conversation(conv.user, conv.full_name || conv.user));
+            this.$dm_conv_list.append($item);
+        }
+    }
+
+    _filter_dm_conversations(query) {
+        if (!this._dm_conversations) return;
+        const filtered = query
+            ? this._dm_conversations.filter(c =>
+                (c.full_name || "").toLowerCase().includes(query) ||
+                c.user.toLowerCase().includes(query)
+            )
+            : this._dm_conversations;
+        this._render_dm_conversations(filtered);
+    }
+
+    async _open_dm_conversation(other_user, other_name) {
+        this._dm_user = other_user;
+        this._dm_mode = true;
+        this.$messages.empty();
+        this.$panel.find(".ai-chat-title").text(other_name);
+
+        // Highlight active conversation in sidebar
+        this.$dm_conv_list.find(".ai-dm-conv-item").removeClass("active");
+        this.$dm_conv_list.find(`.ai-dm-conv-item[data-user="${other_user}"]`).addClass("active");
+
+        // Mark messages as read
+        frappe.call({
+            method: "erpnext_ai_bots.api.messaging.mark_dm_read",
+            args: { other_user },
+            async: true,
+        });
+
+        // Load message history
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.get_dm_history",
+                args: { other_user, limit: 50, offset: 0 },
+                async: true,
+            });
+            const messages = r.message || [];
+            for (const msg of messages) {
+                const is_mine = msg.from_user === frappe.session.user;
+                const role = is_mine ? "sent" : "received";
+                const opts = {};
+                if (msg.reply_preview) {
+                    opts.reply_to_text = msg.reply_preview;
+                    opts.reply_to_role = msg.reply_from === frappe.session.user ? "user" : "other";
+                }
+                this._append_dm_bubble(role, msg.message, is_mine ? "You" : other_name, opts, msg.name);
+            }
+            this._scroll_bottom();
+        } catch (e) {
+            this.$messages.html('<div class="ai-msg ai-msg-bot">Could not load messages</div>');
+        }
+
+        // Update input placeholder with AI name hint
+        const ai_hint = this._ai_name || "AI Oracle";
+        this.$input.attr("placeholder", `Message ${other_name}... (type @${ai_hint} to ask AI)`);
+
+        // Refresh unread count
+        this._load_unread_dm_count();
+        this._load_dm_conversations();
+    }
+
+    _append_dm_bubble(role, text, sender_name, opts, dm_id) {
+        opts = opts || {};
+        const cls = role === "sent" ? "ai-msg-user" : "ai-msg-bot ai-msg-dm";
+        const $msg = $(`<div class="ai-msg ${cls}" data-dm-id="${dm_id || ''}"></div>`);
+
+        if (role === "received") {
+            $msg.prepend(`<span class="ai-dm-sender-label">${frappe.utils.escape_html(sender_name)}</span>`);
+        }
+
+        // Reply quote
+        if (opts.reply_to_text) {
+            const $quote = $(`<div class="ai-reply-quote">
+                <span class="ai-reply-quote-text">${frappe.utils.escape_html(opts.reply_to_text.substring(0, 100))}</span>
+            </div>`);
+            $msg.append($quote);
+        }
+
+        // Forward detection and rich rendering
+        const fwd_match = text.match(/^(?:([\s\S]*?)\n\n)?--- Forwarded from (You|AI Assistant) ---\n\n?([\s\S]*)$/);
+        if (fwd_match) {
+            $msg.addClass("ai-msg-forwarded");
+            const fwd_note = (fwd_match[1] || "").trim();
+            const fwd_from = fwd_match[2];
+            const fwd_body = (fwd_match[3] || "").trim();
+
+            // Optional note above
+            if (fwd_note) {
+                $msg.append($('<div class="ai-fwd-note"></div>').text(fwd_note));
+            }
+
+            // Forwarded card
+            const $card = $(`<div class="ai-fwd-card">
+                <div class="ai-fwd-card-header">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 17 20 12 15 7"/>
+                        <path d="M4 18v-2a4 4 0 0 1 4-4h12"/>
+                    </svg>
+                    <span>Forwarded from <strong>${frappe.utils.escape_html(fwd_from)}</strong></span>
+                </div>
+                <div class="ai-fwd-card-body"></div>
+            </div>`);
+            $card.find(".ai-fwd-card-body").html(erpnext_ai_bots.render_markdown(fwd_body));
+            $msg.append($card);
+        } else if (role === "received") {
+            // Regular received message — render markdown
+            $msg.append($('<div class="ai-dm-content"></div>').html(
+                erpnext_ai_bots.render_markdown(text)
+            ));
+        } else {
+            // Sent message — plain text
+            $msg.append($('<span class="ai-msg-text"></span>').text(text));
+        }
+
+        // DM context menu (reply within DM)
+        $msg.on("contextmenu", (e) => {
+            e.preventDefault();
+            this._show_dm_msg_ctx(e.pageX, e.pageY, dm_id, text);
+        });
+
+        this.$messages.append($msg);
+        this._scroll_bottom();
+        return $msg;
+    }
+
+    _show_dm_msg_ctx(x, y, dm_id, text) {
+        this._dm_reply_target = { dm_id, text };
+        // Reuse the message context menu but only show Reply + Copy
+        this.$msg_ctx_menu.find(".ai-msg-ctx-forward").hide();
+        this.$msg_ctx_menu.find(".ai-msg-ctx-reply").off("click").on("click", () => {
+            this._hide_msg_ctx_menu();
+            if (this._dm_reply_target) {
+                this._start_dm_reply(this._dm_reply_target.dm_id, this._dm_reply_target.text);
+            }
+        });
+        this.$msg_ctx_menu.find(".ai-msg-ctx-copy").off("click").on("click", () => {
+            this._hide_msg_ctx_menu();
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    frappe.show_alert({ message: __("Copied"), indicator: "green" });
+                });
+            }
+        });
+        const left = Math.min(x, window.innerWidth - 140);
+        const top  = Math.min(y, window.innerHeight - 80);
+        this.$msg_ctx_menu.css({ left, top }).show();
+    }
+
+    _start_dm_reply(dm_id, text) {
+        this._dm_reply_to = dm_id;
+        this.$reply_bar.find(".ai-reply-bar-label").text("Reply");
+        this.$reply_bar.find(".ai-reply-bar-text").text(text.substring(0, 80));
+        this.$reply_bar.show();
+        this.$input.focus();
+    }
+
+    async _show_dm_user_picker() {
+        this._user_picker_mode = "dm";
+        this.$forward_modal.show();
+        this.$forward_modal.find(".ai-forward-header span").text("New message to...");
+        this.$forward_modal.find(".ai-forward-note-wrap").hide();
+        this.$forward_modal.find(".ai-forward-search").val("").focus();
+        this._load_user_picker_list();
+    }
+
+    // ── Send DM ──────────────────────────────────────────────────────
+
+    async _send_dm(message) {
+        this.$input.val("").trigger("input");
+
+        const reply_to = this._dm_reply_to || null;
+        const reply_opts = {};
+        if (reply_to) {
+            reply_opts.reply_to_text = this.$reply_bar.find(".ai-reply-bar-text").text();
+        }
+        this._cancel_reply();
+        this._dm_reply_to = null;
+
+        // Check for @ai mention (case-insensitive, match configured AI name)
+        const ai_name = this._ai_name || "AI Oracle";
+        const ai_pattern = new RegExp("^@" + ai_name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s+", "i");
+        const ai_generic = /^@ai\s+/i;
+
+        if (ai_pattern.test(message) || ai_generic.test(message)) {
+            // Extract the question after the @mention
+            const question = message.replace(ai_pattern, "").replace(ai_generic, "").trim();
+            if (!question) {
+                frappe.show_alert({ message: __("Please type a question after @" + ai_name), indicator: "orange" });
+                return;
+            }
+
+            // Show the message immediately
+            this._append_dm_bubble("sent", message, "You", reply_opts);
+
+            // Show thinking indicator
+            this._show_thinking();
+
+            try {
+                await frappe.call({
+                    method: "erpnext_ai_bots.api.messaging.ask_ai_in_dm",
+                    args: {
+                        question: question,
+                        to_user: this._dm_user,
+                        company: this._current_company || "",
+                    },
+                    async: true,
+                });
+            } catch (e) {
+                this._remove_status_indicators();
+                frappe.show_alert({ message: __("Could not invoke AI"), indicator: "red" });
+            }
+            return;
+        }
+
+        // Regular DM — optimistic UI
+        this._append_dm_bubble("sent", message, "You", reply_opts);
+
+        try {
+            await frappe.call({
+                method: "erpnext_ai_bots.api.messaging.send_dm",
+                args: {
+                    to_user: this._dm_user,
+                    message: message,
+                    reply_to: reply_to,
+                    company: this._current_company || "",
+                },
+                async: true,
+            });
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not send message"), indicator: "red" });
+        }
+    }
+
+    // ── Export ───────────────────────────────────────────────────────
+
+    async _export_html() {
+        if (!this.session_id) {
+            frappe.show_alert({ message: __("No active conversation to export"), indicator: "orange" });
+            return;
+        }
+        try {
+            const r = await frappe.call({
+                method: "erpnext_ai_bots.api.chat.export_session_html",
+                args: { session_id: this.session_id },
+                async: true,
+            });
+            const data = r.message || {};
+            if (!data.html) {
+                frappe.show_alert({ message: __("Export failed"), indicator: "red" });
+                return;
+            }
+            // Open in a new tab via Blob URL so the user can print to PDF
+            const blob = new Blob([data.html], { type: "text/html;charset=utf-8" });
+            const url  = URL.createObjectURL(blob);
+            const win  = window.open(url, "_blank");
+            // Revoke the object URL after the window has a chance to load it
+            if (win) {
+                win.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+            }
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not export conversation"), indicator: "red" });
+        }
+    }
+
+    async _export_csv() {
+        if (!this.session_id) {
+            frappe.show_alert({ message: __("No active conversation to export"), indicator: "orange" });
+            return;
+        }
+        try {
+            // Use a form POST so the browser triggers the file download
+            // that the server sets up via frappe.response["type"] = "download".
+            const base = frappe.request.url || "/api/method/";
+            const url  = `/api/method/erpnext_ai_bots.api.chat.export_session_csv`
+                       + `?session_id=${encodeURIComponent(this.session_id)}`
+                       + `&cmd=erpnext_ai_bots.api.chat.export_session_csv`;
+            // The simplest cross-browser way is a temporary <a> click
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${this.session_id}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (e) {
+            frappe.show_alert({ message: __("Could not export conversation"), indicator: "red" });
         }
     }
 };

@@ -77,6 +77,8 @@ def _get_top_customers(limit: int = 10) -> list:
     """
     try:
         # Aggregate revenue per customer from submitted invoices
+        # Only look at last 12 months for performance
+        cutoff = frappe.utils.add_months(frappe.utils.today(), -12)
         rows = frappe.db.sql(
             """
             SELECT
@@ -86,12 +88,12 @@ def _get_top_customers(limit: int = 10) -> list:
                 SUM(si.outstanding_amount) AS outstanding
             FROM `tabSales Invoice` si
             LEFT JOIN `tabCustomer` c ON c.name = si.customer
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.posting_date >= %s
             GROUP BY si.customer
             ORDER BY revenue DESC
             LIMIT %s
             """,
-            (limit,),
+            (cutoff, limit),
             as_dict=True,
         )
         # frappe.db.sql runs with session user permissions implicitly because
@@ -131,6 +133,8 @@ def _get_top_items(limit: int = 10) -> list:
     try:
         if not frappe.has_permission("Sales Invoice", ptype="read"):
             raise PermissionError("no access")
+        # Only look at last 6 months for performance
+        cutoff = frappe.utils.add_months(frappe.utils.today(), -6)
         rows = frappe.db.sql(
             """
             SELECT
@@ -139,12 +143,12 @@ def _get_top_items(limit: int = 10) -> list:
                 SUM(sii.qty) AS qty_sold
             FROM `tabSales Invoice Item` sii
             JOIN `tabSales Invoice` si ON si.name = sii.parent
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.posting_date >= %s
             GROUP BY sii.item_code
             ORDER BY qty_sold DESC
             LIMIT %s
             """,
-            (limit,),
+            (cutoff, limit),
             as_dict=True,
         )
         return rows or []

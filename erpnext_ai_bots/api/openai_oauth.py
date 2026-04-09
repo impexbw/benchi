@@ -200,7 +200,27 @@ def disconnect():
 
 @frappe.whitelist()
 def oauth_status():
-    """Check if the current user has an active OpenAI connection."""
+    """Check if the current user has an active OpenAI connection.
+
+    Also checks for a BYOK API key — if one is set, the user is effectively
+    connected even without OAuth tokens.
+    """
+    # Check BYOK API key first (may not be set — that's fine)
+    try:
+        settings = frappe.get_cached_doc("AI Bot Settings")
+        api_key = settings.get_password("api_key") if settings.api_key else None
+        if api_key:
+            return {
+                "connected": True,
+                "status": "Connected",
+                "account_id": "API Key (BYOK)",
+                "connected_at": None,
+                "token_expiry": None,
+            }
+    except Exception:
+        pass
+
+    # Fall back to OAuth token check
     user = frappe.session.user
     token_doc = _get_token_doc(user)
     if not token_doc:

@@ -12,6 +12,8 @@ TOOL_PERMISSION_MAP = {
     "core.raw_sql": (None, None),   # SQL queries use DB-level auth, not DocType permissions
     "core.frappe_api": ("read", None),
     "core.send_email": (None, None),
+    "core.analyze_image": (None, None),
+    "core.read_file": (None, None),
 
     "accounting.get_trial_balance": ("read", "Account"),
     "accounting.get_outstanding_invoices": ("read", "Sales Invoice"),
@@ -31,15 +33,42 @@ TOOL_PERMISSION_MAP = {
     "stock.get_warehouse_summary": ("read", "Warehouse"),
     "stock.get_item_info": ("read", "Item"),
     "stock.get_reorder_levels": ("read", "Item"),
+    "stock.create_item": ("create", "Item"),
 
     "sales.get_pipeline": ("read", "Opportunity"),
     "sales.create_quotation": ("create", "Quotation"),
     "sales.get_sales_orders": ("read", "Sales Order"),
     "sales.get_customer_info": ("read", "Customer"),
     "sales.get_revenue_summary": ("read", "Sales Invoice"),
+    "sales.create_customer": ("create", "Customer"),
 
     "meta.spawn_subagent": (None, None),
-    "meta.schedule_task": (None, None),  # Meta tool, no DocType permission
+    "meta.schedule_task": (None, None),
+    "meta.saved_report": (None, None),  # Owner-scoped, no DocType permission check here
+
+    # Accounting (extended)
+    "accounting.create_payment_entry": ("create", "Payment Entry"),
+    "accounting.get_general_ledger": ("read", "GL Entry"),
+
+    # Purchase tools
+    "purchase.create_purchase_order": ("create", "Purchase Order"),
+    "purchase.get_supplier_info": ("read", "Supplier"),
+    "purchase.get_purchase_invoices": ("read", "Purchase Invoice"),
+    "purchase.create_supplier": ("create", "Supplier"),
+
+    # CRM tools
+    "crm.manage_lead": ("read", "Lead"),
+    "crm.manage_opportunity": ("read", "Opportunity"),
+
+    # Project tools
+    "project.manage_project": ("read", "Project"),
+    "project.manage_task": ("read", "Task"),
+
+    # Support tools
+    "support.manage_issue": ("read", "Issue"),
+
+    # Asset tools
+    "asset.manage_asset": ("read", "Asset"),
 }
 
 

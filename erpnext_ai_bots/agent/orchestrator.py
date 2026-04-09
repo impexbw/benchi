@@ -61,7 +61,7 @@ class Orchestrator:
         )
         frappe.db.commit()
 
-    def handle_message(self, user_message: str):
+    def handle_message(self, user_message: str, image_url: str = None):
         """Main entry point. Called from the API endpoint."""
         # 1. Prompt injection defense
         check_prompt_injection(user_message)
@@ -69,10 +69,17 @@ class Orchestrator:
         # 2. Cost/license gate (commercial edition)
         self.cost_gate.check_quota()
 
-        # 3. Append user message
+        # 3. If an image is attached, include the URL in the text so the AI
+        #    knows to call core_analyze_image. We don't send the image inline
+        #    because private files can't be downloaded by the external API.
+        if image_url:
+            user_message = f"[Image attached at: {image_url}] {user_message}\n\nUse the core_analyze_image tool with image_url=\"{image_url}\" to analyze this image."
+        msg_content = user_message
+
+
         self.messages.append({
             "role": "user",
-            "content": user_message,
+            "content": msg_content,
             "timestamp": frappe.utils.now_datetime().isoformat(),
         })
 
@@ -232,6 +239,10 @@ class Orchestrator:
         for msg in self.messages[-20:]:
             role = msg["role"]
             content = msg.get("content", "")
+
+            # Handle legacy dict content (e.g. old vision messages)
+            if isinstance(content, dict):
+                content = content.get("text", str(content))
 
             if isinstance(content, list):
                 # Skip turns that contain function_call_output items
@@ -410,7 +421,7 @@ class Orchestrator:
             )
             return
 
-        api_key = self.settings.get_password("api_key")
+        api_key = self.settings.get_password("api_key") if self.settings.api_key else None
         if not api_key:
             self.stream_bridge.send_error(
                 "No API key configured. Set it in AI Bot Settings."
@@ -636,17 +647,34 @@ class Orchestrator:
         frappe.db.commit()
 
 
-def run_orchestrator(user: str, session_id: str, message: str, company: str):
+def run_orchestrator(user: str, session_id: str, message: str, company: str, image_url: str = None):
     """Entry point for background job execution."""
     frappe.set_user(user)
     try:
         agent = Orchestrator(user=user, session_id=session_id, company=company)
-        agent.handle_message(message)
+        agent.handle_message(message, image_url=image_url)
     except Exception as e:
+        # Log the full technical error for developers
+        frappe.log_error(title="AI Agent Error", message=frappe.get_traceback())
+
+        # Determine a friendly message — never expose raw errors to users
+        raw_error = str(e).lower()
+        if "permission" in raw_error:
+            friendly_msg = "You don't have permission for that action. Ask your admin for access."
+        elif "not found" in raw_error:
+            friendly_msg = "I couldn't find what you're looking for. Could you double-check the name?"
+        elif "timeout" in raw_error or "timed out" in raw_error:
+            friendly_msg = "The request took too long. Please try again with a simpler question."
+        elif "rate limit" in raw_error or "rate_limit" in raw_error:
+            friendly_msg = "The AI service is temporarily busy. Please wait a moment and try again."
+        elif "api key" in raw_error or "authentication" in raw_error:
+            friendly_msg = "There is a configuration issue with the AI service. Please contact your administrator."
+        else:
+            friendly_msg = "I ran into an issue processing your request. Please try again."
+
         frappe.publish_realtime(
             event="ai_error",
-            message={"session_id": session_id, "error": str(e)},
+            message={"session_id": session_id, "error": friendly_msg},
             user=user,
             after_commit=False,
         )
-        frappe.log_error(title="AI Agent Error", message=frappe.get_traceback())

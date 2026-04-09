@@ -11,11 +11,14 @@
   "license_status",
   "license_last_validated",
   "license_server_url",
+  "ai_name",
   "accent_color",
   "ai_provider_section",
   "provider",
   "api_key",
   "model_name",
+  "elevenlabs_api_key",
+  "elevenlabs_voice_id",
   "max_tokens_per_request",
   "temperature",
   "oauth_section",
@@ -88,6 +91,13 @@
    "depends_on": "eval:doc.deployment_mode==='Enterprise'"
   },
   {
+   "default": "AI Oracle",
+   "description": "Name of the AI assistant shown in DMs and the chat header. Users can mention it with @name in DMs.",
+   "fieldname": "ai_name",
+   "fieldtype": "Data",
+   "label": "AI Name"
+  },
+  {
    "default": "#6c5ce7",
    "description": "Primary accent color for the AI chat interface",
    "fieldname": "accent_color",
@@ -118,6 +128,19 @@
    "fieldname": "model_name",
    "fieldtype": "Data",
    "label": "Model"
+  },
+  {
+   "description": "ElevenLabs API key for text-to-speech. Leave blank to disable TTS.",
+   "fieldname": "elevenlabs_api_key",
+   "fieldtype": "Password",
+   "label": "ElevenLabs API Key"
+  },
+  {
+   "default": "21m00Tcm4TlvDq8ikWAM",
+   "description": "ElevenLabs voice ID (default: Rachel). Find IDs at elevenlabs.io/voice-lab.",
+   "fieldname": "elevenlabs_voice_id",
+   "fieldtype": "Data",
+   "label": "ElevenLabs Voice ID"
   },
   {
    "default": "4096",

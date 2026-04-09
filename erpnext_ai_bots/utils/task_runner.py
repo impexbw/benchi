@@ -195,11 +195,17 @@ def _extract_last_assistant_text(session_id: str) -> str:
 
 
 def _notify_user(user: str, task_title: str, task_name: str, result: str, session_id: str):
-    """Push a realtime notification to the task owner's browser."""
-    preview = (result or "Task completed.")[:300]
-    if len(result or "") > 300:
+    """Push a realtime notification to the task owner's browser.
+
+    Also creates a persistent Frappe Notification Log entry (visible in the
+    ERPNext notification bell) and sends a best-effort email to the user.
+    """
+    result_text = result or "Task completed."
+    preview = result_text[:300]
+    if len(result_text) > 300:
         preview += "..."
 
+    # 1. Socket.IO realtime push (existing behaviour — kept unchanged)
     frappe.publish_realtime(
         event="ai_scheduled_task_done",
         message={
@@ -211,3 +217,37 @@ def _notify_user(user: str, task_title: str, task_name: str, result: str, sessio
         user=user,
         after_commit=False,
     )
+
+    # 2. Persistent Notification Log — shows in Frappe's top-right bell icon
+    try:
+        frappe.get_doc({
+            "doctype": "Notification Log",
+            "for_user": user,
+            "type": "Alert",
+            "document_type": "AI Scheduled Task",
+            "document_name": task_name,
+            "subject": f"AI Task Complete: {task_title}",
+            "email_content": result_text[:500],
+        }).insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception:
+        # Notification Log failure must not break the task runner
+        frappe.log_error(
+            title=f"Failed to create Notification Log for task {task_name}",
+            message=frappe.get_traceback(),
+        )
+
+    # 3. Email notification — best-effort, never raises
+    try:
+        frappe.sendmail(
+            recipients=[user],
+            subject=f"[AI Oracle] {task_title}",
+            message=(
+                f"<p>Your scheduled AI task has completed:</p>"
+                f"<p><b>{frappe.utils.escape_html(task_title)}</b></p>"
+                f"<p>{frappe.utils.escape_html(preview)}</p>"
+            ),
+            now=True,
+        )
+    except Exception:
+        pass  # Email is best-effort
