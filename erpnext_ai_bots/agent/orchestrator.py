@@ -318,6 +318,11 @@ class Orchestrator:
         result_items = []
 
         for fc in function_calls:
+            # Clear any accumulated messages from the previous tool call so
+            # permission popups and msgprint output don't leak to the client.
+            if hasattr(frappe.local, "message_log"):
+                frappe.local.message_log = []
+
             self.turn_tool_calls += 1
             openai_name = fc["name"]
             # Convert OpenAI-safe name (underscores) back to dotted name
@@ -512,6 +517,10 @@ class Orchestrator:
             if block.type != "tool_use":
                 continue
 
+            # Clear accumulated messages so permission popups don't leak to client
+            if hasattr(frappe.local, "message_log"):
+                frappe.local.message_log = []
+
             self.turn_tool_calls += 1
             tool_name = block.name
             tool_input = block.input
@@ -644,10 +653,19 @@ class Orchestrator:
 def run_orchestrator(user: str, session_id: str, message: str, company: str, image_url: str = None):
     """Entry point for background job execution."""
     frappe.set_user(user)
+    # Suppress Frappe's popup messages — errors are shown in the AI chat instead.
+    # Without this, permission errors from has_permission(throw=True) would show
+    # as browser popups in addition to the chat error.
+    frappe.flags.mute_messages = True
+    if hasattr(frappe.local, "message_log"):
+        frappe.local.message_log = []
     try:
         agent = Orchestrator(user=user, session_id=session_id, company=company)
         agent.handle_message(message, image_url=image_url)
     except Exception as e:
+        # Clear any accumulated messages so they don't leak to the client
+        if hasattr(frappe.local, "message_log"):
+            frappe.local.message_log = []
         # Log the full technical error for developers
         frappe.log_error(title="AI Agent Error", message=frappe.get_traceback())
 
