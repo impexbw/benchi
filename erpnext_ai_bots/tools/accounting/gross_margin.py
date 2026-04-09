@@ -98,7 +98,7 @@ class GetGrossMarginTool(BaseTool):
                 SUM(sii.qty * IFNULL(sii.incoming_rate, 0)) AS cogs
             FROM `tabSales Invoice Item` sii
             JOIN `tabSales Invoice` si ON si.name = sii.parent
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
               AND si.company = %(company)s
               {extra_where}

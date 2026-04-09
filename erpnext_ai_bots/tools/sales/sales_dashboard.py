@@ -59,7 +59,7 @@ class GetSalesDashboardTool(BaseTool):
                 IFNULL(SUM(si.grand_total), 0) AS total_sales,
                 IFNULL(SUM(si.net_total), 0) AS net_sales
             FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date = %(target_date)s
               AND si.company = %(company)s
               {territory_condition}
@@ -73,7 +73,7 @@ class GetSalesDashboardTool(BaseTool):
                 COUNT(*) AS invoice_count,
                 IFNULL(SUM(si.grand_total), 0) AS total_sales
             FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date = %(last_week_date)s
               AND si.company = %(company)s
               {territory_condition}
@@ -87,7 +87,7 @@ class GetSalesDashboardTool(BaseTool):
                 IFNULL(SUM(si.grand_total), 0) AS mtd_sales,
                 COUNT(*) AS mtd_invoices
             FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date BETWEEN %(mtd_start)s AND %(target_date)s
               AND si.company = %(company)s
               {territory_condition}
@@ -104,7 +104,7 @@ class GetSalesDashboardTool(BaseTool):
                 IFNULL(SUM(si.grand_total), 0) AS last_month_sales,
                 COUNT(*) AS last_month_invoices
             FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date BETWEEN %(lm_start)s AND %(lm_end)s
               AND si.company = %(company)s
               {territory_condition}
@@ -119,7 +119,7 @@ class GetSalesDashboardTool(BaseTool):
                 SUM(sii.amount) AS revenue
             FROM `tabSales Invoice Item` sii
             JOIN `tabSales Invoice` si ON si.name = sii.parent
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date = %(target_date)s
               AND si.company = %(company)s
               {territory_condition}
@@ -135,7 +135,7 @@ class GetSalesDashboardTool(BaseTool):
                 si.customer_name,
                 SUM(si.grand_total) AS total
             FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date = %(target_date)s
               AND si.company = %(company)s
               {territory_condition}

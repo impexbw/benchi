@@ -110,7 +110,7 @@ class GetInventoryDaysTool(BaseTool):
             FROM `tabSales Invoice Item` sii
             JOIN `tabSales Invoice` si ON si.name = sii.parent
             JOIN `tabItem` i ON i.name = sii.item_code
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date >= %(velocity_start)s
               AND si.company = %(company)s
               {sales_where}

@@ -85,7 +85,7 @@ class GetBranchPerformanceTool(BaseTool):
                 {profit_cols}
             FROM `tabSales Invoice` si
             {profit_join}
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
               AND si.company = %(company)s
               {territory_condition}
@@ -101,7 +101,7 @@ class GetBranchPerformanceTool(BaseTool):
                 SUM(si.grand_total) AS daily_sales,
                 COUNT(*) AS invoice_count
             FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
+            WHERE si.docstatus = 1 AND si.is_return = 0
               AND si.posting_date = %(today)s
               AND si.company = %(company)s
               {territory_condition}
