@@ -526,29 +526,37 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     <div class="ai-chat-main">
                         <div class="ai-chat-messages">
                             <div class="ai-templates-grid">
-                                <div class="ai-template-card" data-prompt="Show me today's sales summary">
+                                <div class="ai-template-card" data-prompt="Show me today's sales dashboard">
                                     <span class="ai-template-icon">📊</span>
-                                    <span class="ai-template-text">Today's Sales</span>
+                                    <span class="ai-template-text">Sales Dashboard</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="Rank all branches by sales this month with profit margins">
+                                    <span class="ai-template-icon">🏢</span>
+                                    <span class="ai-template-text">Branch Ranking</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="What is our gross profit margin this month by item group?">
+                                    <span class="ai-template-icon">💰</span>
+                                    <span class="ai-template-text">Gross Margin</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="Show me inventory days and slow movers">
+                                    <span class="ai-template-icon">📦</span>
+                                    <span class="ai-template-text">Inventory Health</span>
+                                </div>
+                                <div class="ai-template-card" data-prompt="What is our stock turnover rate this month vs last month?">
+                                    <span class="ai-template-icon">🔄</span>
+                                    <span class="ai-template-text">Stock Turnover</span>
                                 </div>
                                 <div class="ai-template-card" data-prompt="List all overdue invoices">
                                     <span class="ai-template-icon">⚠️</span>
                                     <span class="ai-template-text">Overdue Invoices</span>
                                 </div>
-                                <div class="ai-template-card" data-prompt="What is our current stock level for low-stock items?">
-                                    <span class="ai-template-icon">📦</span>
-                                    <span class="ai-template-text">Low Stock Alert</span>
-                                </div>
-                                <div class="ai-template-card" data-prompt="Show me the top 10 customers by revenue this month">
-                                    <span class="ai-template-icon">👥</span>
-                                    <span class="ai-template-text">Top Customers</span>
+                                <div class="ai-template-card" data-prompt="Email me a sales report for this month with charts">
+                                    <span class="ai-template-icon">📧</span>
+                                    <span class="ai-template-text">Email Report</span>
                                 </div>
                                 <div class="ai-template-card" data-prompt="What is our bank balance across all accounts?">
                                     <span class="ai-template-icon">🏦</span>
                                     <span class="ai-template-text">Bank Balances</span>
-                                </div>
-                                <div class="ai-template-card" data-prompt="Create a quotation">
-                                    <span class="ai-template-icon">📝</span>
-                                    <span class="ai-template-text">New Quotation</span>
                                 </div>
                             </div>
                         </div>
@@ -998,6 +1006,17 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
             </div>
             <div class="ai-help-content">
                 <div class="ai-help-section">
+                    <h4>Management Analytics (Manager roles only)</h4>
+                    <div class="ai-help-cmd">"Show me today's sales dashboard"</div>
+                    <div class="ai-help-cmd">"Rank all branches by sales this month"</div>
+                    <div class="ai-help-cmd">"What is our gross profit margin this month?"</div>
+                    <div class="ai-help-cmd">"Show margin by item group"</div>
+                    <div class="ai-help-cmd">"Show me inventory days and slow movers"</div>
+                    <div class="ai-help-cmd">"What is our stock turnover rate this quarter vs last quarter?"</div>
+                    <div class="ai-help-cmd">"Email me a sales report with charts for this month"</div>
+                    <div class="ai-help-cmd">"Email the branch performance report to admin@company.com"</div>
+                </div>
+                <div class="ai-help-section">
                     <h4>Sales &amp; Customers</h4>
                     <div class="ai-help-cmd">"Create a customer John Smith, email john@email.com, phone 71234567"</div>
                     <div class="ai-help-cmd">"Look up customer NIRMAL"</div>
@@ -1019,6 +1038,7 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     <div class="ai-help-cmd">"Show me the P&amp;L for this quarter"</div>
                     <div class="ai-help-cmd">"What are our bank balances?"</div>
                     <div class="ai-help-cmd">"Show general ledger for NIRMAL"</div>
+                    <div class="ai-help-cmd">"What is our gross margin by territory?"</div>
                 </div>
                 <div class="ai-help-section">
                     <h4>Stock &amp; Inventory</h4>
@@ -1026,6 +1046,8 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
                     <div class="ai-help-cmd">"What is the stock level for item 1-1?"</div>
                     <div class="ai-help-cmd">"Which items need reordering?"</div>
                     <div class="ai-help-cmd">"Transfer 5 units of item 1-1 between warehouses"</div>
+                    <div class="ai-help-cmd">"Show stock turnover by warehouse"</div>
+                    <div class="ai-help-cmd">"Which items are slow movers?"</div>
                 </div>
                 <div class="ai-help-section">
                     <h4>HR &amp; People</h4>
@@ -1822,29 +1844,37 @@ erpnext_ai_bots.ChatWidget = class ChatWidget {
         // Otherwise inject a fresh grid (e.g. after $messages.empty())
         const $grid = $(`
             <div class="ai-templates-grid">
-                <div class="ai-template-card" data-prompt="Show me today's sales summary">
+                <div class="ai-template-card" data-prompt="Show me today's sales dashboard">
                     <span class="ai-template-icon">📊</span>
-                    <span class="ai-template-text">Today's Sales</span>
+                    <span class="ai-template-text">Sales Dashboard</span>
+                </div>
+                <div class="ai-template-card" data-prompt="Rank all branches by sales this month with profit margins">
+                    <span class="ai-template-icon">🏢</span>
+                    <span class="ai-template-text">Branch Ranking</span>
+                </div>
+                <div class="ai-template-card" data-prompt="What is our gross profit margin this month by item group?">
+                    <span class="ai-template-icon">💰</span>
+                    <span class="ai-template-text">Gross Margin</span>
+                </div>
+                <div class="ai-template-card" data-prompt="Show me inventory days and slow movers">
+                    <span class="ai-template-icon">📦</span>
+                    <span class="ai-template-text">Inventory Health</span>
+                </div>
+                <div class="ai-template-card" data-prompt="What is our stock turnover rate this month vs last month?">
+                    <span class="ai-template-icon">🔄</span>
+                    <span class="ai-template-text">Stock Turnover</span>
                 </div>
                 <div class="ai-template-card" data-prompt="List all overdue invoices">
                     <span class="ai-template-icon">⚠️</span>
                     <span class="ai-template-text">Overdue Invoices</span>
                 </div>
-                <div class="ai-template-card" data-prompt="What is our current stock level for low-stock items?">
-                    <span class="ai-template-icon">📦</span>
-                    <span class="ai-template-text">Low Stock Alert</span>
-                </div>
-                <div class="ai-template-card" data-prompt="Show me the top 10 customers by revenue this month">
-                    <span class="ai-template-icon">👥</span>
-                    <span class="ai-template-text">Top Customers</span>
+                <div class="ai-template-card" data-prompt="Email me a sales report for this month with charts">
+                    <span class="ai-template-icon">📧</span>
+                    <span class="ai-template-text">Email Report</span>
                 </div>
                 <div class="ai-template-card" data-prompt="What is our bank balance across all accounts?">
                     <span class="ai-template-icon">🏦</span>
                     <span class="ai-template-text">Bank Balances</span>
-                </div>
-                <div class="ai-template-card" data-prompt="Create a quotation">
-                    <span class="ai-template-icon">📝</span>
-                    <span class="ai-template-text">New Quotation</span>
                 </div>
             </div>
         `);

@@ -12,6 +12,7 @@ TOOL_PERMISSION_MAP = {
     "core.raw_sql": (None, None),   # SQL queries use DB-level auth, not DocType permissions
     "core.frappe_api": ("read", None),
     "core.send_email": (None, None),
+    "core.send_report_email": (None, None),
     "core.analyze_image": (None, None),
     "core.read_file": (None, None),
 
@@ -34,6 +35,8 @@ TOOL_PERMISSION_MAP = {
     "stock.get_item_info": ("read", "Item"),
     "stock.get_reorder_levels": ("read", "Item"),
     "stock.create_item": ("create", "Item"),
+    "stock.get_inventory_days": ("read", "Stock Ledger Entry"),
+    "stock.get_stock_turnover": ("read", "Stock Ledger Entry"),
 
     "sales.get_pipeline": ("read", "Opportunity"),
     "sales.create_quotation": ("create", "Quotation"),
@@ -41,6 +44,8 @@ TOOL_PERMISSION_MAP = {
     "sales.get_customer_info": ("read", "Customer"),
     "sales.get_revenue_summary": ("read", "Sales Invoice"),
     "sales.create_customer": ("create", "Customer"),
+    "sales.get_branch_performance": ("read", "Sales Invoice"),
+    "sales.get_sales_dashboard": ("read", "Sales Invoice"),
 
     "meta.spawn_subagent": (None, None),
     "meta.schedule_task": (None, None),
@@ -49,6 +54,7 @@ TOOL_PERMISSION_MAP = {
     # Accounting (extended)
     "accounting.create_payment_entry": ("create", "Payment Entry"),
     "accounting.get_general_ledger": ("read", "GL Entry"),
+    "accounting.get_gross_margin": ("read", "Sales Invoice"),
 
     # Purchase tools
     "purchase.create_purchase_order": ("create", "Purchase Order"),
@@ -72,9 +78,25 @@ TOOL_PERMISSION_MAP = {
 }
 
 
+# Tools restricted to management roles (require at least one of these roles)
+MANAGEMENT_ROLES = {"System Manager", "Accounts Manager", "Sales Manager", "Stock Manager"}
+ROLE_RESTRICTED_TOOLS = {
+    "accounting.get_gross_margin": MANAGEMENT_ROLES,
+    "sales.get_branch_performance": MANAGEMENT_ROLES,
+    "sales.get_sales_dashboard": MANAGEMENT_ROLES,
+    "stock.get_inventory_days": MANAGEMENT_ROLES,
+    "stock.get_stock_turnover": MANAGEMENT_ROLES,
+    "accounting.get_profit_and_loss": MANAGEMENT_ROLES,
+    "accounting.get_trial_balance": MANAGEMENT_ROLES,
+    "accounting.get_general_ledger": MANAGEMENT_ROLES,
+    "core.raw_sql": {"System Manager"},
+}
+
+
 class PermissionGuard:
     """Checks ERPNext permissions before any tool execution.
     Uses Frappe's standard permission system -- no custom roles needed.
+    Management analytics tools require manager-level roles.
     """
 
     def __init__(self, user: str):
@@ -84,6 +106,18 @@ class PermissionGuard:
         """Verify user has ERPNext permission for this tool + input.
         Raises frappe.PermissionError if denied.
         """
+        # Role-based restriction for management tools
+        required_roles = ROLE_RESTRICTED_TOOLS.get(tool_name)
+        if required_roles:
+            user_roles = set(frappe.get_roles(self.user))
+            if not user_roles.intersection(required_roles):
+                frappe.throw(
+                    _("This analytics tool requires a management role ({0})").format(
+                        ", ".join(sorted(required_roles))
+                    ),
+                    frappe.PermissionError,
+                )
+
         perm_info = TOOL_PERMISSION_MAP.get(tool_name)
         if not perm_info:
             # Unknown tool -- deny by default (fail closed)
